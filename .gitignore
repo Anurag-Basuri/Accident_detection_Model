@@ -1,4 +1,6 @@
+extracted-frames/
 datasets/
 data/
 *.csv
 *.mp4
+*.jpg

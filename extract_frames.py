@@ -3,7 +3,7 @@ import os
 from tqdm import tqdm
 
 # Set up paths
-VIDEO_DATASET_PATH = "video-datasets"
+VIDEO_DATASET_PATH = "datasets/video-datasets"
 EXTRACTED_FRAMES_PATH = "extracted-frames"
 
 # Dataset directories to process
