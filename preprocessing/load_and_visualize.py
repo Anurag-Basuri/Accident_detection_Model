@@ -116,18 +116,23 @@ def analyze_frame_counts(dataset_info):
             frame_counts[video_name] = 0
         frame_counts[video_name] += 1
 
-    # Plot frame count distribution
-    plt.figure(figsize=(12, 6))
-    sns.histplot(list(frame_counts.values()), bins=20, kde=True, color="blue")
-    plt.xlabel("Number of Frames per Video")
-    plt.ylabel("Frequency")
-    plt.title("Distribution of Frame Counts per Video")
-    plt.show()
+        # Plot label distribution
+        plt.figure(figsize=(10, 5))
+        sns.barplot(x=list(label_counts.keys()), y=list(label_counts.values()), hue=list(label_counts.keys()), dodge=False, palette="coolwarm", legend=False)
+        plt.xlabel("Categories")
+        plt.ylabel("Number of Images")
+        plt.title("Label Distribution in Processed Dataset")
+        plt.xticks(rotation=45)
+        plt.show()
 
-    print(f"📊 Total Videos: {len(frame_counts)}")
-    print(f"   - Average Frames per Video: {np.mean(list(frame_counts.values())):.2f}")
-    print(f"   - Minimum Frames in a Video: {min(frame_counts.values())}")
-    print(f"   - Maximum Frames in a Video: {max(frame_counts.values())}")
+        # Plot split distribution
+        plt.figure(figsize=(10, 5))
+        sns.barplot(x=list(split_counts.keys()), y=list(split_counts.values()), hue=list(split_counts.keys()), dodge=False, palette="viridis", legend=False)
+        plt.xlabel("Splits")
+        plt.ylabel("Number of Images")
+        plt.title("Split Distribution in Processed Dataset")
+        plt.xticks(rotation=45)
+        plt.show()
 
 # Load dataset
 dataset_info = load_dataset()
