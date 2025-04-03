@@ -2,85 +2,43 @@ import os
 import shutil
 import random
 
-# Set seed for reproducibility
-random.seed(42)
+# Paths
+SOURCE_DIR = "processed-datasets/all_data"
+TARGET_DIR = "processed-datasets"
 
-# Define paths
-BASE_DIR = "extracted-frames"
-DATASET_2_DIR = os.path.join(BASE_DIR, "dataset-2")
-DATASET_3_DIR = os.path.join(BASE_DIR, "dataset-3")
-
-OUTPUT_DIR = "processed-datasets"
-
-# Train-Val-Test Split Ratios
-TRAIN_RATIO = 0.8
-VAL_RATIO = 0.1
+# Train-Val-Test Split
+TRAIN_RATIO = 0.7
+VAL_RATIO = 0.2
 TEST_RATIO = 0.1
 
-def split_data(dataset_path, accident_folders, non_accident_folders, output_path):
-    """
-    Splits and organizes frames from extracted video datasets into train, val, and test.
-    """
-    print(f"\nProcessing dataset: {dataset_path}")
+# Ensure output directories exist
+for split in ["train", "val", "test"]:
+    for label in ["Accident", "Non Accident"]:
+        os.makedirs(os.path.join(TARGET_DIR, split, label), exist_ok=True)
 
-    # Ensure output directories exist
-    for split in ["train", "val", "test"]:
-        os.makedirs(os.path.join(output_path, split, "Accident"), exist_ok=True)
-        os.makedirs(os.path.join(output_path, split, "Non Accident"), exist_ok=True)
 
-    # Function to move data while keeping full videos together
-    def move_files(category, folder_list, split):
-        for folder in folder_list:
-            folder_path = os.path.join(dataset_path, folder)
-            if not os.path.exists(folder_path):
-                continue  # Skip if folder doesn't exist
+def split_dataset():
+    """Split dataset into train, val, test"""
+    for label in ["Accident", "Non Accident"]:
+        images = os.listdir(os.path.join(SOURCE_DIR, label))
+        random.shuffle(images)
 
-            videos = sorted(os.listdir(folder_path))  # Ensure order is maintained
-            random.shuffle(videos)  # Shuffle for randomness
+        train_count = int(len(images) * TRAIN_RATIO)
+        val_count = int(len(images) * VAL_RATIO)
 
-            # Determine split sizes
-            total_videos = len(videos)
-            train_cutoff = int(total_videos * TRAIN_RATIO)
-            val_cutoff = train_cutoff + int(total_videos * VAL_RATIO)
+        for i, img in enumerate(images):
+            src_path = os.path.join(SOURCE_DIR, label, img)
 
-            # Assign videos to splits
-            for i, video in enumerate(videos):
-                if i < train_cutoff:
-                    target_split = "train"
-                elif i < val_cutoff:
-                    target_split = "val"
-                else:
-                    target_split = "test"
+            if i < train_count:
+                dest_dir = os.path.join(TARGET_DIR, "train", label)
+            elif i < train_count + val_count:
+                dest_dir = os.path.join(TARGET_DIR, "val", label)
+            else:
+                dest_dir = os.path.join(TARGET_DIR, "test", label)
 
-                src_path = os.path.join(folder_path, video)
-                dest_path = os.path.join(output_path, target_split, category, video)
+            shutil.move(src_path, os.path.join(dest_dir, img))
 
-                shutil.move(src_path, dest_path)
+    print("✅ Dataset successfully split into Train/Val/Test!")
 
-    # Move files for both Accident and Non-Accident categories
-    move_files("Accident", accident_folders, output_path)
-    move_files("Non Accident", non_accident_folders, output_path)
 
-# Processing Dataset-2
-accident_folders_2 = ["Accident"]
-non_accident_folders_2 = ["Non-Accident"]
-split_data(DATASET_2_DIR, accident_folders_2, non_accident_folders_2, OUTPUT_DIR)
-
-# Processing Dataset-3
-accident_folders_3 = [
-    "collision_with_motorcycle",
-    "collision_with_stationary_object",
-    "drifting_or_skidding",
-    "fire_or_explosions",
-    "head on collision",
-    "objects_falling",
-    "other_crash",
-    "pedestrian_hit",
-    "rear_collision",
-    "rollover",
-    "side_collision"
-]
-non_accident_folders_3 = ["negative_samples"]
-split_data(DATASET_3_DIR, accident_folders_3, non_accident_folders_3, OUTPUT_DIR)
-
-print("\n✅ Dataset-2 and Dataset-3 successfully processed and split into train, val, and test sets.")
+split_dataset()
