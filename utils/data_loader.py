@@ -1,8 +1,11 @@
 import os
+import re
 import cv2
 import numpy as np
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.utils import Sequence
+from sklearn.utils import shuffle
+from glob import glob
 
 # ========================
 # CONFIGURATION
@@ -10,9 +13,11 @@ from tensorflow.keras.utils import Sequence
 IMAGE_SIZE = (224, 224)
 SEQUENCE_LENGTH = 30
 
+
 class AccidentDataLoader(Sequence):
     """
-    Custom Data Generator for video sequence loading.
+    Custom Data Generator for loading video sequences from flat directory structures.
+    Assumes frames are named like: 000001_10.jpg (video_id + frame_index).
     """
 
     def __init__(self, directory, batch_size=8, shuffle=True, augment=False):
@@ -21,8 +26,8 @@ class AccidentDataLoader(Sequence):
         self.shuffle = shuffle
         self.augment = augment
         self.class_names = ["Non Accident", "Accident"]
-        self.file_paths, self.labels = self._load_data()
-        self.indexes = np.arange(len(self.file_paths))
+        self.sequence_data = self._build_sequence_data()
+        self.indexes = np.arange(len(self.sequence_data))
 
         if self.augment:
             self.augmenter = ImageDataGenerator(
@@ -35,70 +40,80 @@ class AccidentDataLoader(Sequence):
             )
 
         if self.shuffle:
-            np.random.shuffle(self.indexes)
+            self.sequence_data = shuffle(self.sequence_data)
+            self.indexes = np.arange(len(self.sequence_data))
 
-    def _load_data(self):
-        file_paths = []
-        labels = []
+    def _build_sequence_data(self):
+        sequence_data = []
 
-        for idx, class_name in enumerate(self.class_names):
+        for class_idx, class_name in enumerate(self.class_names):
             class_dir = os.path.join(self.directory, class_name)
 
             if not os.path.exists(class_dir):
                 print(f"⚠️ Directory not found: {class_dir}")
                 continue
 
-            for video_folder in os.listdir(class_dir):
-                full_path = os.path.join(class_dir, video_folder)
-                if os.path.isdir(full_path):
-                    file_paths.append(full_path)
-                    labels.append(idx)
+            # Get all .jpg frames
+            all_frames = glob(os.path.join(class_dir, "*.jpg"))
 
-        return np.array(file_paths), np.array(labels)
+            # Group frames by video ID prefix
+            grouped = {}
+            for path in all_frames:
+                basename = os.path.basename(path)
+                match = re.match(r"(\d+)_\d+\.jpg", basename)
+                if match:
+                    video_id = match.group(1)
+                    grouped.setdefault(video_id, []).append(path)
+
+            # Store sequences
+            for video_id, frames in grouped.items():
+                if len(frames) >= SEQUENCE_LENGTH:
+                    sorted_frames = sorted(frames, key=lambda x: int(re.search(r"_(\d+)\.jpg", x).group(1)))
+                    sequence_data.append({
+                        "frames": sorted_frames[:SEQUENCE_LENGTH],
+                        "label": class_idx
+                    })
+
+        return sequence_data
 
     def __len__(self):
-        return int(np.floor(len(self.file_paths) / self.batch_size))
+        return int(np.floor(len(self.sequence_data) / self.batch_size))
 
     def __getitem__(self, index):
-        batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
-        batch_paths = [self.file_paths[i] for i in batch_indexes]
-        batch_labels = [self.labels[i] for i in batch_indexes]
+        batch_data = self.sequence_data[index * self.batch_size:(index + 1) * self.batch_size]
 
-        batch_sequences = [self._load_video_sequence(path) for path in batch_paths]
-        return np.array(batch_sequences), np.array(batch_labels)
+        X = np.zeros((len(batch_data), SEQUENCE_LENGTH, *IMAGE_SIZE, 3), dtype=np.float32)
+        y = np.zeros((len(batch_data), 1), dtype=np.float32)
 
-    def _load_video_sequence(self, folder_path):
-        frames = []
-        frame_files = sorted(os.listdir(folder_path))
+        for i, item in enumerate(batch_data):
+            frames = []
+            for frame_path in item["frames"]:
+                frame = cv2.imread(frame_path)
+                if frame is None:
+                    print(f"⚠️ Skipping corrupted frame: {frame_path}")
+                    frame = np.zeros((IMAGE_SIZE[0], IMAGE_SIZE[1], 3), dtype=np.float32)
 
-        for fname in frame_files:
-            frame_path = os.path.join(folder_path, fname)
-            frame = cv2.imread(frame_path)
+                frame = cv2.resize(frame, IMAGE_SIZE)
+                frame = frame / 255.0
 
-            if frame is None:
-                print(f"⚠️ Corrupted frame skipped: {frame_path}")
-                continue
+                if self.augment:
+                    frame = self.augmenter.random_transform(frame)
 
-            frame = cv2.resize(frame, IMAGE_SIZE)
-            frame = frame / 255.0  # Normalize
+                frames.append(frame)
 
-            if self.augment:
-                frame = self.augmenter.random_transform(frame)
+            X[i] = self._pad_or_trim(frames)
+            y[i] = item["label"]
 
-            frames.append(frame)
-
-        return self._pad_or_trim(frames)
+        return X, y
 
     def _pad_or_trim(self, frames):
-        """
-        Ensures fixed-length sequences by trimming or padding.
-        """
         if len(frames) < SEQUENCE_LENGTH:
-            last_frame = frames[-1] if frames else np.zeros((IMAGE_SIZE[0], IMAGE_SIZE[1], 3))
+            last = frames[-1] if frames else np.zeros((IMAGE_SIZE[0], IMAGE_SIZE[1], 3))
             while len(frames) < SEQUENCE_LENGTH:
-                frames.append(last_frame)
+                frames.append(last)
         return np.array(frames[:SEQUENCE_LENGTH])
 
     def on_epoch_end(self):
         if self.shuffle:
-            np.random.shuffle(self.indexes)
+            self.sequence_data = shuffle(self.sequence_data)
+            self.indexes = np.arange(len(self.sequence_data))
