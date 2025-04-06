@@ -4,7 +4,7 @@ import tensorflow as tf
 from sklearn.metrics import classification_report
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 
-from data_loader import AccidentDataLoader
+from utils.data_loader import AccidentDataLoader
 from models.cnn_lstm_efficientnet import build_model  # Your custom model builder
 
 # ========================
