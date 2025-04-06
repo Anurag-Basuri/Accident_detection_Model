@@ -23,7 +23,7 @@ class AccidentDataLoader(Sequence):
     def __init__(self, directory, batch_size=8, shuffle=True, augment=False):
         self.directory = directory
         self.batch_size = batch_size
-        self.shuffle = shuffle
+        self.shuffle_data = shuffle_data  # Renamed to avoid conflict
         self.augment = augment
         self.class_names = ["Non Accident", "Accident"]
         self.sequence_data = self._build_sequence_data()
@@ -39,9 +39,10 @@ class AccidentDataLoader(Sequence):
                 fill_mode="nearest"
             )
 
-        if self.shuffle:
+        if self.shuffle_data:  # Use the renamed attribute
             self.sequence_data = shuffle(self.sequence_data)
             self.indexes = np.arange(len(self.sequence_data))
+
 
     def _build_sequence_data(self):
         sequence_data = []
@@ -114,6 +115,6 @@ class AccidentDataLoader(Sequence):
         return np.array(frames[:SEQUENCE_LENGTH])
 
     def on_epoch_end(self):
-        if self.shuffle:
+        if self.shuffle_data:  # Use the renamed attribute
             self.sequence_data = shuffle(self.sequence_data)
             self.indexes = np.arange(len(self.sequence_data))
