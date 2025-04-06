@@ -1,28 +1,21 @@
 import os
 import cv2
 import numpy as np
-import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.utils import Sequence
-import random
 
 # ========================
 # CONFIGURATION
 # ========================
 IMAGE_SIZE = (224, 224)
-SEQUENCE_LENGTH = 30  # Number of frames per video sequence
-BATCH_SIZE = 16
-DATA_AUGMENTATION = True  # Enable for training
+SEQUENCE_LENGTH = 30
 
-# ========================
-# VIDEO SEQUENCE LOADER
-# ========================
 class AccidentDataLoader(Sequence):
     """
-    Custom Data Generator for loading video sequences.
+    Custom Data Generator for video sequence loading.
     """
 
-    def __init__(self, directory, batch_size=BATCH_SIZE, shuffle=True, augment=False):
+    def __init__(self, directory, batch_size=8, shuffle=True, augment=False):
         self.directory = directory
         self.batch_size = batch_size
         self.shuffle = shuffle
@@ -30,9 +23,6 @@ class AccidentDataLoader(Sequence):
         self.class_names = ["Non Accident", "Accident"]
         self.file_paths, self.labels = self._load_data()
         self.indexes = np.arange(len(self.file_paths))
-
-        if self.shuffle:
-            np.random.shuffle(self.indexes)
 
         if self.augment:
             self.augmenter = ImageDataGenerator(
@@ -44,21 +34,25 @@ class AccidentDataLoader(Sequence):
                 fill_mode="nearest"
             )
 
+        if self.shuffle:
+            np.random.shuffle(self.indexes)
+
     def _load_data(self):
         file_paths = []
         labels = []
 
-        for class_idx, class_name in enumerate(self.class_names):
+        for idx, class_name in enumerate(self.class_names):
             class_dir = os.path.join(self.directory, class_name)
 
             if not os.path.exists(class_dir):
-                print(f"⚠️ Warning: Directory {class_dir} not found. Skipping.")
+                print(f"⚠️ Directory not found: {class_dir}")
                 continue
 
             for video_folder in os.listdir(class_dir):
-                video_path = os.path.join(class_dir, video_folder)
-                file_paths.append(video_path)
-                labels.append(class_idx)
+                full_path = os.path.join(class_dir, video_folder)
+                if os.path.isdir(full_path):
+                    file_paths.append(full_path)
+                    labels.append(idx)
 
         return np.array(file_paths), np.array(labels)
 
@@ -66,66 +60,45 @@ class AccidentDataLoader(Sequence):
         return int(np.floor(len(self.file_paths) / self.batch_size))
 
     def __getitem__(self, index):
-        """
-        Returns a batch of video sequences and their labels.
-        """
-        batch_indexes = self.indexes[index * self.batch_size: (index + 1) * self.batch_size]
-        batch_file_paths = [self.file_paths[i] for i in batch_indexes]
+        batch_indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
+        batch_paths = [self.file_paths[i] for i in batch_indexes]
         batch_labels = [self.labels[i] for i in batch_indexes]
 
-        batch_sequences = [self._load_video_sequence(fp) for fp in batch_file_paths]
-        batch_sequences = np.array(batch_sequences)
-        batch_labels = np.array(batch_labels)
+        batch_sequences = [self._load_video_sequence(path) for path in batch_paths]
+        return np.array(batch_sequences), np.array(batch_labels)
 
-        return batch_sequences, batch_labels
-
-    def _load_video_sequence(self, video_folder):
-        """
-        Loads frames from a video sequence, resizes them, and pads if necessary.
-        """
+    def _load_video_sequence(self, folder_path):
         frames = []
-        frame_files = sorted(os.listdir(video_folder))  # Sort to maintain correct order
+        frame_files = sorted(os.listdir(folder_path))
 
-        for frame_file in frame_files:
-            frame_path = os.path.join(video_folder, frame_file)
+        for fname in frame_files:
+            frame_path = os.path.join(folder_path, fname)
             frame = cv2.imread(frame_path)
 
             if frame is None:
-                print(f"⚠️ Skipping corrupted frame: {frame_path}")
+                print(f"⚠️ Corrupted frame skipped: {frame_path}")
                 continue
 
             frame = cv2.resize(frame, IMAGE_SIZE)
             frame = frame / 255.0  # Normalize
+
+            if self.augment:
+                frame = self.augmenter.random_transform(frame)
+
             frames.append(frame)
 
-        if self.augment:
-            frames = [self.augmenter.random_transform(frame) for frame in frames]
+        return self._pad_or_trim(frames)
 
-        return self._pad_sequence(frames)
-
-    def _pad_sequence(self, frames):
+    def _pad_or_trim(self, frames):
         """
-        Pads a sequence to the required length using the last frame.
+        Ensures fixed-length sequences by trimming or padding.
         """
         if len(frames) < SEQUENCE_LENGTH:
             last_frame = frames[-1] if frames else np.zeros((IMAGE_SIZE[0], IMAGE_SIZE[1], 3))
-            frames.extend([last_frame] * (SEQUENCE_LENGTH - len(frames)))
-
+            while len(frames) < SEQUENCE_LENGTH:
+                frames.append(last_frame)
         return np.array(frames[:SEQUENCE_LENGTH])
 
     def on_epoch_end(self):
         if self.shuffle:
             np.random.shuffle(self.indexes)
-
-# ========================
-# USAGE EXAMPLE
-# ========================
-if __name__ == "__main__":
-    train_loader = AccidentDataLoader("processed-datasets/train", batch_size=8, shuffle=True, augment=True)
-    val_loader = AccidentDataLoader("processed-datasets/val", batch_size=8, shuffle=False, augment=False)
-
-    # Load a sample batch
-    X_batch, y_batch = train_loader[0]
-
-    print(f"Sample batch shape: {X_batch.shape}")  # (batch_size, sequence_length, 224, 224, 3)
-    print(f"Sample labels: {y_batch}")  # Array of 0s and 1s
