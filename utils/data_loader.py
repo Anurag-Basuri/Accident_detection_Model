@@ -2,10 +2,10 @@ import os
 import re
 import cv2
 import numpy as np
+from glob import glob
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.utils import Sequence
 from sklearn.utils import shuffle
-from glob import glob
 
 # ========================
 # CONFIGURATION
@@ -16,19 +16,20 @@ SEQUENCE_LENGTH = 30
 
 class AccidentDataLoader(Sequence):
     """
-    Custom Data Generator for loading video sequences from flat directory structures.
-    Assumes frames are named like: 000001_10.jpg (video_id + frame_index).
+    Custom Data Generator for loading video sequences from a flat directory.
+    Assumes frames are named like: 000001_10.jpg (video_id_frameIndex.jpg).
     """
 
-    def __init__(self, directory, batch_size=8, shuffle_data=True, augment=False):
+    def __init__(self, directory, batch_size=8, shuffle=True, augment=False):
         self.directory = directory
         self.batch_size = batch_size
-        self.shuffle_data = shuffle_data  # Correctly named parameter
+        self.shuffle = shuffle
         self.augment = augment
         self.class_names = ["Non Accident", "Accident"]
         self.sequence_data = self._build_sequence_data()
         self.indexes = np.arange(len(self.sequence_data))
 
+        # Augmentation config
         if self.augment:
             self.augmenter = ImageDataGenerator(
                 rotation_range=10,
@@ -39,10 +40,12 @@ class AccidentDataLoader(Sequence):
                 fill_mode="nearest"
             )
 
-        if self.shuffle_data:  # Use the renamed attribute
-            self.sequence_data = shuffle(self.sequence_data)
-            self.indexes = np.arange(len(self.sequence_data))
+        if self.shuffle:
+            self._shuffle_data()
 
+    def _shuffle_data(self):
+        self.sequence_data = shuffle(self.sequence_data, random_state=42)
+        self.indexes = np.arange(len(self.sequence_data))
 
     def _build_sequence_data(self):
         sequence_data = []
@@ -54,10 +57,10 @@ class AccidentDataLoader(Sequence):
                 print(f"⚠️ Directory not found: {class_dir}")
                 continue
 
-            # Get all .jpg frames
+            # Gather all .jpg files in class directory
             all_frames = glob(os.path.join(class_dir, "*.jpg"))
 
-            # Group frames by video ID prefix
+            # Group frames by video ID
             grouped = {}
             for path in all_frames:
                 basename = os.path.basename(path)
@@ -66,10 +69,11 @@ class AccidentDataLoader(Sequence):
                     video_id = match.group(1)
                     grouped.setdefault(video_id, []).append(path)
 
-            # Store sequences
             for video_id, frames in grouped.items():
                 if len(frames) >= SEQUENCE_LENGTH:
-                    sorted_frames = sorted(frames, key=lambda x: int(re.search(r"_(\d+)\.jpg", x).group(1)))
+                    sorted_frames = sorted(
+                        frames, key=lambda x: int(re.search(r"_(\d+)\.jpg", x).group(1))
+                    )
                     sequence_data.append({
                         "frames": sorted_frames[:SEQUENCE_LENGTH],
                         "label": class_idx
@@ -78,7 +82,7 @@ class AccidentDataLoader(Sequence):
         return sequence_data
 
     def __len__(self):
-        return int(np.floor(len(self.sequence_data) / self.batch_size))
+    return (len(self.sequence_data) + self.batch_size - 1) // self.batch_size
 
     def __getitem__(self, index):
         batch_data = self.sequence_data[index * self.batch_size:(index + 1) * self.batch_size]
@@ -115,6 +119,5 @@ class AccidentDataLoader(Sequence):
         return np.array(frames[:SEQUENCE_LENGTH])
 
     def on_epoch_end(self):
-        if self.shuffle_data:  # Use the renamed attribute
-            self.sequence_data = shuffle(self.sequence_data)
-            self.indexes = np.arange(len(self.sequence_data))
+        if self.shuffle:
+            self._shuffle_data()
