@@ -28,6 +28,8 @@ class AccidentDataLoader(Sequence):
         self.class_names = ["Non Accident", "Accident"]
         self.sequence_data = self._build_sequence_data()
         self.indexes = np.arange(len(self.sequence_data))
+        print(f"[DEBUG] Total samples loaded: {len(self.sequence_data)}")
+
 
         # Augmentation config
         if self.augment:
@@ -49,6 +51,8 @@ class AccidentDataLoader(Sequence):
 
     def _build_sequence_data(self):
         sequence_data = []
+        print(f"[DEBUG] Found {len(video_paths)} videos in {class_dir}")
+
 
         for class_idx, class_name in enumerate(self.class_names):
             class_dir = os.path.join(self.directory, class_name)
@@ -82,7 +86,7 @@ class AccidentDataLoader(Sequence):
         return sequence_data
 
     def __len__(self):
-    return (len(self.sequence_data) + self.batch_size - 1) // self.batch_size
+        return (len(self.sequence_data) + self.batch_size - 1) // self.batch_size
 
     def __getitem__(self, index):
         batch_data = self.sequence_data[index * self.batch_size:(index + 1) * self.batch_size]
