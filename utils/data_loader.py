@@ -63,7 +63,6 @@ class AccidentDataLoader(Sequence):
             all_frames = glob(os.path.join(class_dir, "*.jpg"))
             print(f"[DEBUG] Found {len(all_frames)} frames in {class_dir}")
 
-            # Group frames by video ID
             grouped = {}
             for path in all_frames:
                 basename = os.path.basename(path)
@@ -73,19 +72,14 @@ class AccidentDataLoader(Sequence):
                     grouped.setdefault(video_id, []).append(path)
 
             for video_id, frames in grouped.items():
-                if len(frames) < SEQUENCE_LENGTH:
-                    continue
-
                 sorted_frames = sorted(
                     frames, key=lambda x: int(re.search(r"_(\d+)\.jpg", x).group(1))
                 )
-
-                # Generate sequences using sliding window
-                for i in range(0, len(sorted_frames) - SEQUENCE_LENGTH + 1, STEP_SIZE):
-                    sequence_data.append({
-                        "frames": sorted_frames[i:i+SEQUENCE_LENGTH],
-                        "label": class_idx
-                    })
+                # Add all, even if shorter than SEQUENCE_LENGTH
+                sequence_data.append({
+                    "frames": sorted_frames,
+                    "label": class_idx
+                })
 
         print(f"[DEBUG] Total sequences built: {len(sequence_data)}")
         return sequence_data
