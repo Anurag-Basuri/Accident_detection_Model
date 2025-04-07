@@ -20,10 +20,10 @@ class AccidentDataLoader(Sequence):
     Assumes frames are named like: 000001_10.jpg (video_id + frame_index).
     """
 
-    def __init__(self, directory, batch_size=8, shuffle=True, augment=False):
+    def __init__(self, directory, batch_size=8, shuffle_data=True, augment=False):
         self.directory = directory
         self.batch_size = batch_size
-        self.shuffle_data = shuffle_data  # Renamed to avoid conflict
+        self.shuffle_data = shuffle_data  # Correctly named parameter
         self.augment = augment
         self.class_names = ["Non Accident", "Accident"]
         self.sequence_data = self._build_sequence_data()
