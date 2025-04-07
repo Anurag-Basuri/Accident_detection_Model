@@ -21,19 +21,24 @@ VAL_DIR = "processed-datasets/val"
 # ========================
 # DATA GENERATORS
 # ========================
-train_loader = AccidentDataLoader(
-    directory=TRAIN_DIR,
-    batch_size=BATCH_SIZE,
-    shuffle=True,
-    augment=True
-)
+try:
+    train_loader = AccidentDataLoader(
+        directory=TRAIN_DIR,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        augment=True
+    )
 
-val_loader = AccidentDataLoader(
-    directory=VAL_DIR,
-    batch_size=BATCH_SIZE,
-    shuffle=False,
-    augment=False
-)
+    val_loader = AccidentDataLoader(
+        directory=VAL_DIR,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        augment=False
+    )
+except TypeError as e:
+    print(f"❌ DataLoader init failed: {e}")
+    exit(1)
+
 
 # ========================
 # BUILD MODEL
