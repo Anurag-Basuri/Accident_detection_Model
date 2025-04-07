@@ -26,10 +26,10 @@ class AccidentDataLoader(Sequence):
         self.shuffle = shuffle
         self.augment = augment
         self.class_names = ["Non Accident", "Accident"]
+        print(f"[DEBUG] Initializing AccidentDataLoader with directory: {directory}")
         self.sequence_data = self._build_sequence_data()
         self.indexes = np.arange(len(self.sequence_data))
         print(f"[DEBUG] Total samples loaded: {len(self.sequence_data)}")
-
 
         # Augmentation config
         if self.augment:
@@ -46,13 +46,13 @@ class AccidentDataLoader(Sequence):
             self._shuffle_data()
 
     def _shuffle_data(self):
+        print("[DEBUG] Shuffling data...")
         self.sequence_data = shuffle(self.sequence_data, random_state=42)
         self.indexes = np.arange(len(self.sequence_data))
 
     def _build_sequence_data(self):
         sequence_data = []
-        print(f"[DEBUG] Found {len(video_paths)} videos in {class_dir}")
-
+        print("[DEBUG] Building sequence data...")
 
         for class_idx, class_name in enumerate(self.class_names):
             class_dir = os.path.join(self.directory, class_name)
@@ -63,6 +63,7 @@ class AccidentDataLoader(Sequence):
 
             # Gather all .jpg files in class directory
             all_frames = glob(os.path.join(class_dir, "*.jpg"))
+            print(f"[DEBUG] Found {len(all_frames)} frames in {class_dir}")
 
             # Group frames by video ID
             grouped = {}
@@ -83,6 +84,7 @@ class AccidentDataLoader(Sequence):
                         "label": class_idx
                     })
 
+        print(f"[DEBUG] Total sequences built: {len(sequence_data)}")
         return sequence_data
 
     def __len__(self):
@@ -90,6 +92,7 @@ class AccidentDataLoader(Sequence):
 
     def __getitem__(self, index):
         batch_data = self.sequence_data[index * self.batch_size:(index + 1) * self.batch_size]
+        print(f"[DEBUG] Loading batch {index + 1}/{len(self)} with {len(batch_data)} samples")
 
         X = np.zeros((len(batch_data), SEQUENCE_LENGTH, *IMAGE_SIZE, 3), dtype=np.float32)
         y = np.zeros((len(batch_data), 1), dtype=np.float32)
@@ -113,6 +116,7 @@ class AccidentDataLoader(Sequence):
             X[i] = self._pad_or_trim(frames)
             y[i] = item["label"]
 
+        print(f"[DEBUG] Batch loaded with shape: X={X.shape}, y={y.shape}")
         return X, y
 
     def _pad_or_trim(self, frames):
