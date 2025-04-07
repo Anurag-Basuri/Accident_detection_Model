@@ -12,7 +12,7 @@ from sklearn.utils import shuffle
 # ========================
 IMAGE_SIZE = (224, 224)
 SEQUENCE_LENGTH = 30
-
+STEP_SIZE = 5  # You can tweak this. Lower means more overlapping sequences.
 
 class AccidentDataLoader(Sequence):
     """
@@ -31,7 +31,6 @@ class AccidentDataLoader(Sequence):
         self.indexes = np.arange(len(self.sequence_data))
         print(f"[DEBUG] Total samples loaded: {len(self.sequence_data)}")
 
-        # Augmentation config
         if self.augment:
             self.augmenter = ImageDataGenerator(
                 rotation_range=10,
@@ -61,7 +60,6 @@ class AccidentDataLoader(Sequence):
                 print(f"⚠️ Directory not found: {class_dir}")
                 continue
 
-            # Gather all .jpg files in class directory
             all_frames = glob(os.path.join(class_dir, "*.jpg"))
             print(f"[DEBUG] Found {len(all_frames)} frames in {class_dir}")
 
@@ -75,12 +73,17 @@ class AccidentDataLoader(Sequence):
                     grouped.setdefault(video_id, []).append(path)
 
             for video_id, frames in grouped.items():
-                if len(frames) >= SEQUENCE_LENGTH:
-                    sorted_frames = sorted(
-                        frames, key=lambda x: int(re.search(r"_(\d+)\.jpg", x).group(1))
-                    )
+                if len(frames) < SEQUENCE_LENGTH:
+                    continue
+
+                sorted_frames = sorted(
+                    frames, key=lambda x: int(re.search(r"_(\d+)\.jpg", x).group(1))
+                )
+
+                # Generate sequences using sliding window
+                for i in range(0, len(sorted_frames) - SEQUENCE_LENGTH + 1, STEP_SIZE):
                     sequence_data.append({
-                        "frames": sorted_frames[:SEQUENCE_LENGTH],
+                        "frames": sorted_frames[i:i+SEQUENCE_LENGTH],
                         "label": class_idx
                     })
 
