@@ -22,7 +22,12 @@ def build_model(sequence_length=10, img_size=(224, 224, 3), fine_tune_at=100):
     """
 
     # Load EfficientNetB0 as a feature extractor
-    base_model = EfficientNetB0(weights="imagenet", include_top=False, input_shape=img_size)
+    base_model = EfficientNetB0(
+    weights="/kaggle/input/efficient_net/other/default/1/efficientnetb0_notop.h5",
+    include_top=False,
+    input_shape=img_size
+)
+
     base_model.trainable = False  # Freeze base model initially
 
     # Unfreeze some layers for fine-tuning
