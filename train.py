@@ -15,8 +15,8 @@ SEQUENCE_LENGTH = 30
 IMAGE_SIZE = (224, 224)
 EPOCHS = 50
 MODEL_SAVE_PATH = "model_checkpoints/best_model.h5"
-TRAIN_DIR = "processed-datasets/train"
-VAL_DIR = "processed-datasets/val"
+TRAIN_DIR = "/kaggle/input/accident-data/processed-datasets/train"
+VAL_DIR = "/kaggle/input/accident-data/processed-datasets/val"
 
 # ========================
 # DATA GENERATORS

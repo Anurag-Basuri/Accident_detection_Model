@@ -1,6 +1,8 @@
 extracted-frames/
 datasets/
 data/
+processed-datasets/
+processed-datasets.zip
 *.csv
 *.mp4
 *.jpg
