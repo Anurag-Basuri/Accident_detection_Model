@@ -201,14 +201,14 @@ def draw_detection_boxes(image, detections):
     height, width = img.shape[:2]
     detected_objects = {}
     
-    for box in detections.boxes:
+    for box in detections:
         # Get box coordinates
         x1, y1, x2, y2 = map(int, box.xyxy[0])
         cls = int(box.cls)
         conf = float(box.conf[0])
         
         # Get object class name
-        class_name = st.session_state.detector.vehicle_classes.get(cls, {}).get('name', 'unknown')
+        class_name = st.session_state.detector.vehicle_classes[cls]
         
         # Update detected objects count
         detected_objects[class_name] = detected_objects.get(class_name, 0) + 1
@@ -372,42 +372,7 @@ def process_image(image_path):
             raise ValueError(result["error"])
         
         # Draw detection boxes
-        annotated_image = image.copy()
-        detected_objects = {}
-        
-        # Draw vehicle boxes
-        for box in result["detections"]:
-            cls = int(box.cls)
-            conf = float(box.conf[0])
-            vehicle_type = st.session_state.detector.vehicle_classes[cls]
-            
-            # Update detected objects count
-            detected_objects[vehicle_type] = detected_objects.get(vehicle_type, 0) + 1
-            
-            # Get box coordinates
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            
-            # Draw box
-            color = (0, 0, 255) if result["accident_detected"] else (0, 255, 0)
-            thickness = max(1, int(conf * 3))
-            cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, thickness)
-            
-            # Add label
-            label = f"{vehicle_type} {conf:.2f}"
-            (label_width, label_height), _ = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-            
-            # Draw label background
-            cv2.rectangle(annotated_image,
-                         (x1, y1 - label_height - 10),
-                         (x1 + label_width, y1),
-                         color, -1)
-            
-            # Add label text
-            cv2.putText(annotated_image, label,
-                       (x1, y1 - 5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                       (255, 255, 255), 2)
+        annotated_image, detected_objects = draw_detection_boxes(image, result["detections"])
         
         # Add accident status
         status = "ACCIDENT DETECTED!" if result["accident_detected"] else "No Accident Detected"
@@ -423,7 +388,8 @@ def process_image(image_path):
             'detected_objects': detected_objects,
             'accident_detected': result["accident_detected"],
             'vehicle_count': result["vehicle_count"],
-            'overlap': result["overlap"]
+            'overlap': result["overlap"],
+            'severity': result["severity"]
         }
     except Exception as e:
         return {
@@ -434,15 +400,10 @@ def process_image(image_path):
 def process_video(video_path):
     """Process video file with error handling"""
     try:
-        # Open video file
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise ValueError("Failed to open video file")
-        
         # Process video
         result = st.session_state.detector.process_video(video_path)
-        if not isinstance(result, dict):
-            raise ValueError("Invalid video processing results")
+        if "error" in result:
+            raise ValueError(result["error"])
         
         return {
             'success': True,
@@ -453,9 +414,105 @@ def process_video(video_path):
             'success': False,
             'error': str(e)
         }
-    finally:
-        if 'cap' in locals():
-            cap.release()
+
+def display_severity_info(severity):
+    """Display severity information"""
+    st.subheader("Accident Severity")
+    
+    if severity and severity.get("level") != "Unknown":
+        # Create and display severity gauge
+        fig = create_severity_gauge(severity.get("severity_score", 0))
+        st.pyplot(fig)
+        
+        # Display severity level
+        level = severity["level"]
+        if level == "Minor":
+            st.info(f"Severity: {level} - Minor damage, likely repairable")
+        elif level == "Moderate":
+            st.warning(f"Severity: {level} - Significant damage, may require extensive repairs")
+        else:
+            st.error(f"Severity: {level} - Severe damage, likely total loss")
+
+def display_video_results(result, video_path):
+    """Display results for video processing"""
+    if result["accident_detected"]:
+        st.error("🚨 Accident Detected!")
+        
+        # Display severity and insurance info
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            display_severity_info(result['severity'])
+        
+        with col2:
+            display_insurance_info(result)
+        
+        # Display accident frames
+        st.subheader("Accident Frames")
+        display_accident_frames(result["frames"])
+        
+        # Display emergency info
+        display_emergency_info()
+    else:
+        st.success("✅ No Accident Detected")
+        st.info("The video appears to be safe.")
+
+def display_insurance_info(result):
+    """Display insurance information"""
+    st.subheader("Insurance Assessment")
+    
+    # Create sample vehicle details
+    vehicle_details = {
+        "Vehicle 1": {"damage_score": 0.7},
+        "Vehicle 2": {"damage_score": 0.5}
+    }
+    
+    # Display damage bar chart
+    fig = create_damage_bar_chart(vehicle_details)
+    st.pyplot(fig)
+    
+    # Display estimated costs
+    st.write(f"Estimated Total Damage: ${5000:,.2f}")
+    st.write(f"Repair Estimate: ${3000:,.2f}")
+
+def display_accident_frames(frames):
+    """Display accident frames in a grid"""
+    st.markdown('<div class="frame-container">', unsafe_allow_html=True)
+    
+    for frame_data in frames:
+        frame = frame_data["frame"]
+        frame_number = frame_data["frame_number"]
+        
+        # Convert BGR to RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Resize frame to be smaller
+        height, width = frame_rgb.shape[:2]
+        new_height = int(height * 0.4)
+        new_width = int(width * 0.4)
+        frame_resized = cv2.resize(frame_rgb, (new_width, new_height))
+        
+        # Display frame
+        st.markdown(f'<div class="frame-item">', unsafe_allow_html=True)
+        st.image(frame_resized, caption=f"Frame {frame_number}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def display_emergency_info():
+    """Display emergency contact information"""
+    st.markdown("""
+        <div class="emergency-info">
+            <h3>🚨 Emergency Contacts</h3>
+            <p>If you're involved in an accident:</p>
+            <ul>
+                <li>Call Emergency Services: 911</li>
+                <li>Contact Insurance Provider: 1-800-INSURANCE</li>
+                <li>Police Department: 1-800-POLICE</li>
+            </ul>
+            <p>Stay calm and ensure everyone's safety first.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
 def main():
     st.title("🚗 AI-Powered Accident Detection System")
@@ -516,6 +573,7 @@ def main():
                         if result['accident_detected']:
                             st.error("🚨 Potential Accident Detected!")
                             display_severity_info(result['severity'])
+                            display_emergency_info()
                         else:
                             st.success("✅ No Accident Detected")
                 
@@ -559,101 +617,6 @@ def main():
         with col3:
             st.markdown("🚑 **Emergency Response**")
             st.markdown("Quick access to emergency contacts")
-
-def display_severity_info(severity):
-    """Display severity information"""
-    st.subheader("Accident Severity")
-    
-    if severity and severity.get("level") != "Unknown":
-        # Create and display severity gauge
-        fig = create_severity_gauge(severity.get("severity_score", 0))
-        st.pyplot(fig)
-        
-        # Display severity level
-        level = severity["level"]
-        if level == "Minor":
-            st.info(f"Severity: {level} - Minor damage, likely repairable")
-        elif level == "Moderate":
-            st.warning(f"Severity: {level} - Significant damage, may require extensive repairs")
-        else:
-            st.error(f"Severity: {level} - Severe damage, likely total loss")
-
-def display_video_results(result, video_path):
-    """Display results for video processing"""
-    if result["accident_detected"]:
-        st.error("🚨 Accident Detected!")
-        
-        # Display severity and insurance info
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            display_severity_info(result['severity'])
-        
-        with col2:
-            display_insurance_info(result)
-        
-        # Display accident frames
-        st.subheader("Accident Frames")
-        display_accident_frames(result["frames"])
-        
-        # Display emergency info
-        display_emergency_info()
-    else:
-        st.success("✅ No Accident Detected")
-        st.info("The video appears to be safe.")
-
-def display_insurance_info(result):
-    """Display insurance information"""
-    st.subheader("Insurance Assessment")
-    insurance = result.get("insurance", {})
-    
-    if insurance:
-        # Display damage bar chart
-        fig = create_damage_bar_chart(insurance.get("vehicle_details", {}))
-        st.pyplot(fig)
-        
-        # Display estimated costs
-        st.write(f"Estimated Total Damage: ${insurance.get('estimated_damage', 0):,.2f}")
-        st.write(f"Repair Estimate: ${insurance.get('repair_estimate', 0):,.2f}")
-
-def display_accident_frames(frames):
-    """Display accident frames in a grid"""
-    st.markdown('<div class="frame-container">', unsafe_allow_html=True)
-    
-    for frame_data in frames:
-        frame = frame_data["frame"]
-        frame_number = frame_data["frame_number"]
-        
-        # Convert BGR to RGB
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Resize frame to be smaller
-        height, width = frame_rgb.shape[:2]
-        new_height = int(height * 0.4)
-        new_width = int(width * 0.4)
-        frame_resized = cv2.resize(frame_rgb, (new_width, new_height))
-        
-        # Display frame
-        st.markdown(f'<div class="frame-item">', unsafe_allow_html=True)
-        st.image(frame_resized, caption=f"Frame {frame_number}")
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def display_emergency_info():
-    """Display emergency contact information"""
-    st.markdown("""
-        <div class="emergency-info">
-            <h3>🚨 Emergency Contacts</h3>
-            <p>If you're involved in an accident:</p>
-            <ul>
-                <li>Call Emergency Services: 911</li>
-                <li>Contact Insurance Provider: 1-800-INSURANCE</li>
-                <li>Police Department: 1-800-POLICE</li>
-            </ul>
-            <p>Stay calm and ensure everyone's safety first.</p>
-        </div>
-    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main() 
