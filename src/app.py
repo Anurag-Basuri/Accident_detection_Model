@@ -16,6 +16,11 @@ import time
 warnings.filterwarnings('ignore')
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
 logging.getLogger('torch').setLevel(logging.ERROR)
+logging.getLogger('ultralytics').setLevel(logging.ERROR)
+
+# Set environment variables
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['PYTORCH_WARN_ONCE'] = '0'
 
 # Add the project root directory to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,6 +29,10 @@ sys.path.append(project_root)
 # Import local modules
 from src.detection.accident_detector import AccidentDetector
 from src.utils.visualization import create_severity_gauge, create_damage_bar_chart
+
+# Set event loop policy for Windows
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Custom theme
 custom_theme = {
