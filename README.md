@@ -11,6 +11,94 @@ Road accidents are a significant issue, causing loss of life and property. Delay
 - **Automated Notifications**: Real-time alerts to emergency services upon accident detection.
 - **Insurance Reporting**: Automated generation of structured reports to assist in claim processing and dispute resolution.
 
+## Technical Implementation
+
+### Model Architecture
+
+- **Hybrid CNN-LSTM Model**: Combines EfficientNetB0 for spatial feature extraction with LSTM for temporal sequence learning
+- **Key Components**:
+  - TimeDistributed layers for video sequence processing
+  - LSTM layers (128 and 64 units) for temporal pattern recognition
+  - Batch normalization and dropout for regularization
+  - Binary classification output (accident vs non-accident)
+
+### Training Configuration
+
+- **Image Processing**:
+  - Input size: 224x224 pixels
+  - Sequence length: 30 frames
+  - Batch size: 8 (training), 16 (evaluation)
+- **Optimization**:
+  - Optimizer: AdamW with learning rate 1e-4
+  - Loss function: Binary cross-entropy
+  - Early stopping with patience of 10 epochs
+  - Learning rate reduction on plateau
+
+### Data Pipeline
+
+- **Preprocessing**:
+  - Video frame extraction
+  - Dataset merging and splitting
+  - Data augmentation for training
+  - Validation set preparation
+- **Evaluation**:
+  - Comprehensive performance metrics
+  - Confusion matrix visualization
+  - Training history plotting
+  - Results export to CSV
+
+## Project Structure
+
+```
+├── train.py                 # Main training script
+├── evaluate.py              # Model evaluation
+├── models/
+│   └── cnn_lstm_efficientnet.py  # Model architecture
+├── preprocessing/
+│   ├── extract_frames.py    # Video frame extraction
+│   ├── merge_datasets.py    # Dataset combination
+│   ├── load_and_visualize.py # Data visualization
+│   └── split-frames.py      # Data splitting
+├── datasets/                # Raw datasets
+├── processed-datasets/      # Processed data
+└── notebooks/              # Jupyter notebooks
+```
+
+## Installation and Setup
+
+1. Clone the repository:
+
+```bash
+git clone [repository-url]
+cd [repository-name]
+```
+
+2. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Prepare your dataset:
+
+- Place raw videos in the `datasets/` directory
+- Run preprocessing scripts to extract and prepare frames
+- Ensure proper train/validation split
+
+## Usage
+
+### Training
+
+```bash
+python train.py
+```
+
+### Evaluation
+
+```bash
+python evaluate.py
+```
+
 ## Objectives
 
 1. Faster and more accurate accident detection.
@@ -43,6 +131,21 @@ By incorporating AI into road safety, this project aims to:
 
 This project focuses on image/video-based accident detection and does not include factors like weather or driver behavior analysis.
 
-## Conclusion
+## Future Improvements
 
-The AI-powered Real-Time Accident Information System offers a technological solution to a critical real-world problem. By automating accident detection, emergency response, and insurance reporting, this initiative seeks to save lives, reduce economic losses, and improve road safety.
+1. Integration with real-time traffic monitoring systems
+2. Enhanced severity assessment using object detection
+3. Multi-camera fusion for better coverage
+4. Mobile application for real-time alerts
+5. Integration with emergency response systems
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
+## Acknowledgments
+
+- EfficientNetB0 for feature extraction
+- TensorFlow and Keras for deep learning framework
+- OpenCV for video processing
+- Various open-source datasets for training and validation
