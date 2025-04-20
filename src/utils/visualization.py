@@ -7,15 +7,18 @@ from typing import Dict, List, Tuple, Any
 
 def create_severity_gauge(severity_score: float) -> plt.Figure:
     """Create a gauge chart for severity visualization"""
-    fig, ax = plt.subplots(figsize=(6, 3))
+    # Create figure and polar axis
+    fig = plt.figure(figsize=(6, 3))
+    ax = fig.add_subplot(111, projection='polar')
     
     # Create color gradient
     colors = ['#4CAF50', '#FFC107', '#F44336']
     cmap = LinearSegmentedColormap.from_list('severity', colors)
     
-    # Create gauge
+    # Set up the polar plot
     ax.set_theta_zero_location('N')
     ax.set_theta_direction(-1)
+    ax.set_ylim(0, 1)
     
     # Draw gauge
     theta = np.linspace(0, np.pi, 100)
