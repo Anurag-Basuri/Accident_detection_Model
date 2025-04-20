@@ -1,290 +1,200 @@
 import streamlit as st
-import tempfile
-import os
 import cv2
 import numpy as np
-from detection.accident_detector import AccidentDetector
-from utils.visualization import (
-    create_severity_gauge,
-    create_damage_bar_chart,
-    create_speed_heatmap,
-    draw_vehicle_boxes,
-    create_impact_visualization
-)
-from datetime import datetime
-import traceback
+from PIL import Image
+import tempfile
+import os
+from src.detection.accident_detector import AccidentDetector
+from src.utils.visualization import create_severity_gauge, create_damage_bar_chart
+import matplotlib.pyplot as plt
 
 # Set page config
 st.set_page_config(
-    page_title="AI Accident Detection",
+    page_title="Accident Detection System",
     page_icon="🚗",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
+
+# Initialize session state
+if 'detector' not in st.session_state:
+    st.session_state.detector = AccidentDetector()
 
 # Custom CSS
 st.markdown("""
     <style>
     .main {
-        background-color: #f5f5f5;
+        padding: 2rem;
     }
     .stButton>button {
-        background-color: #2196F3;
-        color: white;
-        border-radius: 5px;
-        padding: 10px 20px;
+        width: 100%;
     }
-    .stAlert {
-        border-radius: 5px;
+    .frame-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
     }
-    .metric-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .frame-item {
+        flex: 0 0 calc(33.33% - 10px);
+        max-width: calc(33.33% - 10px);
     }
-    .error-message {
-        color: #f44336;
-        padding: 10px;
-        border-radius: 5px;
+    .severity-container {
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
+    }
+    .damage-container {
+        margin: 20px 0;
+    }
+    .emergency-info {
         background-color: #ffebee;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
     }
     </style>
 """, unsafe_allow_html=True)
 
-def handle_error(e: Exception, message: str = "An error occurred"):
-    """Handle and display errors gracefully"""
-    st.markdown(f'<div class="error-message">{message}</div>', unsafe_allow_html=True)
-    st.error(f"Error details: {str(e)}")
-    st.code(traceback.format_exc())
-
 def main():
-    try:
-        st.title("🚗 AI-Powered Accident Detection System")
+    st.title("🚗 Accident Detection System")
+    
+    # File uploader
+    uploaded_file = st.file_uploader("Upload an image or video", type=["jpg", "jpeg", "png", "mp4", "avi"])
+    
+    if uploaded_file is not None:
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            file_path = tmp_file.name
         
-        # Sidebar
-        with st.sidebar:
-            st.header("⚙️ Settings")
-            confidence_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.5)
-            frame_skip = st.slider("Frame Skip", 1, 10, 5)
-            
-            st.header("🚨 Emergency Contacts")
-            emergency_contacts = {
-                "Police": "911",
-                "Ambulance": "911",
-                "Fire Department": "911",
-                "Roadside Assistance": "1-800-ROAD-HELP"
-            }
-            for service, number in emergency_contacts.items():
-                st.markdown(f"**{service}**: {number}")
-            
-            st.header("📝 Insurance Claim")
-            with st.form("claim_form"):
-                name = st.text_input("Full Name")
-                policy_number = st.text_input("Policy Number")
-                phone = st.text_input("Phone Number")
-                email = st.text_input("Email")
-                accident_date = st.date_input("Accident Date")
-                accident_time = st.time_input("Accident Time")
-                description = st.text_area("Accident Description")
+        try:
+            # Process file based on type
+            if uploaded_file.type.startswith('image'):
+                result = st.session_state.detector.process_image(file_path)
+                display_image_results(result, file_path)
+            else:
+                result = st.session_state.detector.process_video(file_path)
+                display_video_results(result, file_path)
                 
-                if st.form_submit_button("Generate Claim Form"):
-                    if all([name, policy_number, phone, email]):
-                        st.success("Claim form generated successfully!")
-                        st.download_button(
-                            label="Download Claim Form",
-                            data=f"""
-                            Insurance Claim Form
-                            --------------------
-                            Name: {name}
-                            Policy Number: {policy_number}
-                            Phone: {phone}
-                            Email: {email}
-                            Accident Date: {accident_date}
-                            Accident Time: {accident_time}
-                            Description: {description}
-                            """,
-                            file_name=f"insurance_claim_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                            mime="text/plain"
-                        )
-                    else:
-                        st.error("Please fill in all required fields")
-        
-        # Main content
-        uploaded_file = st.file_uploader("📁 Upload an image or video", 
-                                        type=['jpg', 'jpeg', 'png', 'mp4', 'avi', 'mov'])
-        
-        if uploaded_file is not None:
-            try:
-                # Save uploaded file to temporary location
-                with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-                    tmp_file.write(uploaded_file.read())
-                    file_path = tmp_file.name
-                    
-                # Initialize detector
-                detector = AccidentDetector()
-                
-                # Process based on file type
-                if uploaded_file.type.startswith('image'):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.subheader("📸 Original Image")
-                        st.image(uploaded_file, use_column_width=True)
-                    
-                    with st.spinner('🔍 Processing image...'):
-                        try:
-                            results = detector.process_image(file_path)
-                            
-                            # Visualize detections
-                            img = cv2.imread(file_path)
-                            if img is None:
-                                raise ValueError("Failed to read image file")
-                                
-                            yolo_results = detector.yolo_model(img)
-                            vis_img = draw_vehicle_boxes(img, yolo_results, 
-                                                      results["accident_detected"])
-                            
-                            with col2:
-                                st.subheader("🎯 Detection Results")
-                                st.image(vis_img, channels="BGR", use_column_width=True)
-                            
-                            if results["accident_detected"]:
-                                st.error("🚨 Accident Detected!")
-                                
-                                # Create columns for metrics
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                                    st.metric("Confidence", f"{results['confidence']:.2%}")
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                # Calculate severity and insurance
-                                severity = detector._calculate_severity([{"detections": yolo_results}])
-                                insurance = detector._assess_insurance([{"detections": yolo_results}])
-                                
-                                with col2:
-                                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                                    st.metric("Severity Level", severity['level'])
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                with col3:
-                                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                                    st.metric("Estimated Damage", f"${insurance['estimated_damage']:,.2f}")
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                # Visualizations
-                                st.subheader("📊 Analysis")
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.pyplot(create_severity_gauge(severity['factors']['severity_score']))
-                                
-                                with col2:
-                                    st.pyplot(create_impact_visualization(severity['factors']['max_overlap']))
-                                
-                                # Damage chart
-                                st.pyplot(create_damage_bar_chart(insurance['vehicle_details']))
-                                
-                                # Vehicle details
-                                with st.expander("🚗 Vehicle Details"):
-                                    for vehicle_type, details in insurance["vehicle_details"].items():
-                                        st.markdown(f"### {vehicle_type.title()}")
-                                        col1, col2, col3 = st.columns(3)
-                                        with col1:
-                                            st.metric("Count", details['count'])
-                                        with col2:
-                                            st.metric("Total Damage", f"${details['total_damage']:,.2f}")
-                                        with col3:
-                                            st.metric("Max Damage", f"${details['max_damage']:,.2f}")
-                            else:
-                                st.success("✅ No Accident Detected")
-                                
-                        except Exception as e:
-                            handle_error(e, "Error processing image")
-                
-                elif uploaded_file.type.startswith('video'):
-                    st.video(uploaded_file)
-                    
-                    with st.spinner('🔍 Processing video...'):
-                        try:
-                            results = detector.process_video(file_path)
-                            
-                            if results["accident_detected"]:
-                                st.error("🚨 ACCIDENT DETECTED! 🚨")
-                                
-                                # Create columns for metrics
-                                col1, col2, col3 = st.columns(3)
-                                
-                                with col1:
-                                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                                    st.metric("Severity Level", results["severity"]['level'])
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                with col2:
-                                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                                    st.metric("Vehicle Count", results["severity"]["factors"]["vehicle_count"])
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                with col3:
-                                    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-                                    st.metric("Estimated Damage", f"${results['insurance']['estimated_damage']:,.2f}")
-                                    st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                # Visualizations
-                                st.subheader("📊 Analysis")
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.pyplot(create_severity_gauge(results["severity"]['factors']['severity_score']))
-                                
-                                with col2:
-                                    st.pyplot(create_speed_heatmap(results["severity"]["factors"]["max_speeds"]))
-                                
-                                # Impact visualization
-                                st.pyplot(create_impact_visualization(results["severity"]["factors"]["max_overlap"]))
-                                
-                                # Damage chart
-                                st.pyplot(create_damage_bar_chart(results["insurance"]["vehicle_details"]))
-                                
-                                # Vehicle details
-                                with st.expander("🚗 Vehicle Details"):
-                                    for vehicle_type, details in results["insurance"]["vehicle_details"].items():
-                                        st.markdown(f"### {vehicle_type.title()}")
-                                        col1, col2, col3 = st.columns(3)
-                                        with col1:
-                                            st.metric("Count", details['count'])
-                                        with col2:
-                                            st.metric("Total Damage", f"${details['total_damage']:,.2f}")
-                                        with col3:
-                                            st.metric("Max Damage", f"${details['max_damage']:,.2f}")
-                                
-                                # Display video frames
-                                st.subheader("🎥 Key Frames")
-                                for frame_data in results["frames"]:
-                                    frame = frame_data["frame"]
-                                    st.image(frame, caption=f"Frame {frame_data['frame_number']}")
-                            else:
-                                st.success("✅ No Accident Detected")
-                                
-                        except Exception as e:
-                            handle_error(e, "Error processing video")
-                
-            except Exception as e:
-                handle_error(e, "Error handling uploaded file")
-            finally:
-                # Clean up temporary file
-                try:
-                    os.unlink(file_path)
-                except:
-                    pass
-                
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+        finally:
+            # Clean up
+            os.unlink(file_path)
+
+def display_image_results(result, image_path):
+    """Display results for image processing"""
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        # Display original image
+        image = Image.open(image_path)
+        st.image(image, caption="Uploaded Image", use_column_width=True)
+    
+    with col2:
+        if result["accident_detected"]:
+            st.error("🚨 Accident Detected!")
+            display_severity_info(result)
+            display_emergency_info()
         else:
-            st.info("📁 Please upload an image or video file to begin analysis.")
-            
-    except Exception as e:
-        handle_error(e, "An unexpected error occurred")
+            st.success("✅ No Accident Detected")
+            st.info("The image appears to be safe.")
+
+def display_video_results(result, video_path):
+    """Display results for video processing"""
+    if result["accident_detected"]:
+        st.error("🚨 Accident Detected!")
+        
+        # Display severity and insurance info
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            display_severity_info(result)
+        
+        with col2:
+            display_insurance_info(result)
+        
+        # Display accident frames
+        st.subheader("Accident Frames")
+        display_accident_frames(result["frames"])
+        
+        # Display emergency info
+        display_emergency_info()
+    else:
+        st.success("✅ No Accident Detected")
+        st.info("The video appears to be safe.")
+
+def display_severity_info(result):
+    """Display severity information"""
+    st.subheader("Accident Severity")
+    severity = result.get("severity", {})
+    
+    if severity and severity.get("level") != "Unknown":
+        # Create and display severity gauge
+        fig = create_severity_gauge(severity.get("severity_score", 0))
+        st.pyplot(fig)
+        
+        # Display severity level
+        level = severity["level"]
+        if level == "Minor":
+            st.info(f"Severity: {level} - Minor damage, likely repairable")
+        elif level == "Moderate":
+            st.warning(f"Severity: {level} - Significant damage, may require extensive repairs")
+        else:
+            st.error(f"Severity: {level} - Severe damage, likely total loss")
+
+def display_insurance_info(result):
+    """Display insurance information"""
+    st.subheader("Insurance Assessment")
+    insurance = result.get("insurance", {})
+    
+    if insurance:
+        # Display damage bar chart
+        fig = create_damage_bar_chart(insurance.get("vehicle_details", {}))
+        st.pyplot(fig)
+        
+        # Display estimated costs
+        st.write(f"Estimated Total Damage: ${insurance.get('estimated_damage', 0):,.2f}")
+        st.write(f"Repair Estimate: ${insurance.get('repair_estimate', 0):,.2f}")
+
+def display_accident_frames(frames):
+    """Display accident frames in a grid"""
+    st.markdown('<div class="frame-container">', unsafe_allow_html=True)
+    
+    for frame_data in frames:
+        frame = frame_data["frame"]
+        frame_number = frame_data["frame_number"]
+        
+        # Convert BGR to RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
+        # Resize frame to be smaller
+        height, width = frame_rgb.shape[:2]
+        new_height = int(height * 0.4)
+        new_width = int(width * 0.4)
+        frame_resized = cv2.resize(frame_rgb, (new_width, new_height))
+        
+        # Display frame
+        st.markdown(f'<div class="frame-item">', unsafe_allow_html=True)
+        st.image(frame_resized, caption=f"Frame {frame_number}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def display_emergency_info():
+    """Display emergency contact information"""
+    st.markdown("""
+        <div class="emergency-info">
+            <h3>🚨 Emergency Contacts</h3>
+            <p>If you're involved in an accident:</p>
+            <ul>
+                <li>Call Emergency Services: 911</li>
+                <li>Contact Insurance Provider: 1-800-INSURANCE</li>
+                <li>Police Department: 1-800-POLICE</li>
+            </ul>
+            <p>Stay calm and ensure everyone's safety first.</p>
+        </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main() 
