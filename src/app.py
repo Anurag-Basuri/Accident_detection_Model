@@ -6,6 +6,15 @@ import tempfile
 import os
 import sys
 import matplotlib.pyplot as plt
+import asyncio
+import warnings
+import logging
+from datetime import datetime
+
+# Suppress TensorFlow warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+warnings.filterwarnings('ignore', category=UserWarning)
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
 
 # Add the project root directory to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -19,12 +28,21 @@ from src.utils.visualization import create_severity_gauge, create_damage_bar_cha
 st.set_page_config(
     page_title="Accident Detection System",
     page_icon="🚗",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Initialize session state
 if 'detector' not in st.session_state:
     st.session_state.detector = AccidentDetector()
+if 'stats' not in st.session_state:
+    st.session_state.stats = {
+        'total_processed': 0,
+        'accidents_detected': 0,
+        'false_positives': 0,
+        'processing_time': 0,
+        'last_update': datetime.now()
+    }
 
 # Custom CSS
 st.markdown("""
@@ -59,16 +77,91 @@ st.markdown("""
         border-radius: 5px;
         margin: 10px 0;
     }
+    .stats-card {
+        background-color: #f5f5f5;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
     </style>
 """, unsafe_allow_html=True)
 
+def update_stats(accident_detected, processing_time):
+    """Update statistics"""
+    st.session_state.stats['total_processed'] += 1
+    if accident_detected:
+        st.session_state.stats['accidents_detected'] += 1
+    st.session_state.stats['processing_time'] = processing_time
+    st.session_state.stats['last_update'] = datetime.now()
+
+def display_stats():
+    """Display statistics in the sidebar"""
+    with st.sidebar:
+        st.header("📊 Statistics")
+        st.markdown('<div class="stats-card">', unsafe_allow_html=True)
+        st.metric("Total Files Processed", st.session_state.stats['total_processed'])
+        st.metric("Accidents Detected", st.session_state.stats['accidents_detected'])
+        st.metric("Processing Time (s)", f"{st.session_state.stats['processing_time']:.2f}")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.header("⚙️ Settings")
+        confidence_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.05)
+        frame_skip = st.slider("Frame Skip", 1, 10, 5)
+        
+        st.header("🚨 Emergency Contacts")
+        emergency_contacts = {
+            "Police": "911",
+            "Ambulance": "911",
+            "Fire Department": "911",
+            "Roadside Assistance": "1-800-ROAD-HELP"
+        }
+        for service, number in emergency_contacts.items():
+            st.markdown(f"**{service}**: {number}")
+        
+        st.header("📝 Insurance Claim")
+        with st.form("claim_form"):
+            name = st.text_input("Full Name")
+            policy_number = st.text_input("Policy Number")
+            phone = st.text_input("Phone Number")
+            email = st.text_input("Email")
+            accident_date = st.date_input("Accident Date")
+            accident_time = st.time_input("Accident Time")
+            description = st.text_area("Accident Description")
+            
+            if st.form_submit_button("Generate Claim Form"):
+                if all([name, policy_number, phone, email]):
+                    st.success("Claim form generated successfully!")
+                    st.download_button(
+                        label="Download Claim Form",
+                        data=f"""
+                        Insurance Claim Form
+                        --------------------
+                        Name: {name}
+                        Policy Number: {policy_number}
+                        Phone: {phone}
+                        Email: {email}
+                        Accident Date: {accident_date}
+                        Accident Time: {accident_time}
+                        Description: {description}
+                        """,
+                        file_name=f"insurance_claim_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain"
+                    )
+                else:
+                    st.error("Please fill in all required fields")
+
 def main():
     st.title("🚗 Accident Detection System")
+    
+    # Display statistics in sidebar
+    display_stats()
     
     # File uploader
     uploaded_file = st.file_uploader("Upload an image or video", type=["jpg", "jpeg", "png", "mp4", "avi"])
     
     if uploaded_file is not None:
+        start_time = datetime.now()
+        
         # Create temporary file
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
             tmp_file.write(uploaded_file.getvalue())
@@ -82,7 +175,11 @@ def main():
             else:
                 result = st.session_state.detector.process_video(file_path)
                 display_video_results(result, file_path)
-                
+            
+            # Update statistics
+            processing_time = (datetime.now() - start_time).total_seconds()
+            update_stats(result.get("accident_detected", False), processing_time)
+            
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
         finally:
