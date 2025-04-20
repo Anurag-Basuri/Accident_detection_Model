@@ -11,6 +11,7 @@ import warnings
 import logging
 from datetime import datetime
 import time
+import traceback
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -55,7 +56,11 @@ st.set_page_config(
 
 # Initialize session state
 if 'detector' not in st.session_state:
-    st.session_state.detector = AccidentDetector()
+    try:
+        st.session_state.detector = AccidentDetector()
+    except Exception as e:
+        st.error(f"Failed to initialize accident detector: {str(e)}")
+        st.stop()
 if 'stats' not in st.session_state:
     st.session_state.stats = {
         'total_processed': 0,
@@ -334,6 +339,79 @@ def display_stats():
                 else:
                     st.error("Please fill in all required fields")
 
+def validate_file(file):
+    """Validate uploaded file"""
+    if file is None:
+        return False, "No file uploaded"
+    
+    # Check file size (max 100MB)
+    max_size = 100 * 1024 * 1024  # 100MB
+    if file.size > max_size:
+        return False, "File size exceeds 100MB limit"
+    
+    # Check file type
+    allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'video/mp4', 'video/avi']
+    if file.type not in allowed_types:
+        return False, f"Unsupported file type: {file.type}. Please upload an image (JPEG, PNG) or video (MP4, AVI)."
+    
+    return True, ""
+
+def process_image(image_path):
+    """Process image file with error handling"""
+    try:
+        # Read image
+        image = cv2.imread(image_path)
+        if image is None:
+            raise ValueError("Failed to read image file")
+        
+        # Run detection
+        detections = st.session_state.detector.yolo_model(image)
+        if not hasattr(detections, 'boxes'):
+            raise ValueError("Invalid detection results")
+        
+        # Draw detection boxes
+        annotated_image, detected_objects = draw_detection_boxes(image, detections)
+        
+        return {
+            'success': True,
+            'image': annotated_image,
+            'detected_objects': detected_objects,
+            'accident_detected': len(detected_objects) >= 2
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }
+
+def process_video(video_path):
+    """Process video file with error handling"""
+    try:
+        # Open video file
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise ValueError("Failed to open video file")
+        
+        # Process video
+        result = st.session_state.detector.process_video(video_path)
+        if not isinstance(result, dict):
+            raise ValueError("Invalid video processing results")
+        
+        return {
+            'success': True,
+            'result': result
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }
+    finally:
+        if 'cap' in locals():
+            cap.release()
+
 def main():
     st.title("🚗 AI-Powered Accident Detection System")
     st.markdown("### 🔍 Upload an image or video for accident detection and analysis")
@@ -352,6 +430,12 @@ def main():
         st.markdown('</div>', unsafe_allow_html=True)
     
     if uploaded_file is not None:
+        # Validate file
+        is_valid, error_message = validate_file(uploaded_file)
+        if not is_valid:
+            st.error(error_message)
+            return
+        
         start_time = datetime.now()
         
         # Create temporary file
@@ -366,48 +450,53 @@ def main():
                 
                 # Process file based on type
                 if uploaded_file.type.startswith('image'):
-                    # Use YOLO for image detection
-                    image = cv2.imread(file_path)
-                    if image is None:
-                        st.error("❌ Failed to read image file")
+                    result = process_image(file_path)
+                    if not result['success']:
+                        st.error(f"Error processing image: {result['error']}")
+                        if st.checkbox("Show detailed error information"):
+                            st.code(result['traceback'])
                         return
-                    
-                    # Run YOLO detection
-                    detections = st.session_state.detector.yolo_model(image)
-                    
-                    # Draw detection boxes
-                    annotated_image, detected_objects = draw_detection_boxes(image, detections)
                     
                     # Display results
                     col1, col2 = st.columns([2, 1])
                     with col1:
-                        st.image(cv2.cvtColor(annotated_image, cv2.COLOR_BGR2RGB),
+                        st.image(cv2.cvtColor(result['image'], cv2.COLOR_BGR2RGB),
                                 caption="Detection Results",
                                 use_column_width=True)
                     
                     with col2:
-                        display_object_summary(detected_objects)
+                        display_object_summary(result['detected_objects'])
                         
-                        # Analyze for accidents
-                        if len(detected_objects) >= 2:  # At least 2 vehicles
+                        if result['accident_detected']:
                             st.error("🚨 Potential Accident Detected!")
                             display_severity_info({"severity": {"level": "Moderate", "score": 0.6}})
                         else:
                             st.success("✅ No Accident Detected")
                 
                 else:
-                    result = st.session_state.detector.process_video(file_path)
-                    display_video_results(result, file_path)
+                    result = process_video(file_path)
+                    if not result['success']:
+                        st.error(f"Error processing video: {result['error']}")
+                        if st.checkbox("Show detailed error information"):
+                            st.code(result['traceback'])
+                        return
+                    
+                    display_video_results(result['result'], file_path)
             
             # Update statistics
             processing_time = (datetime.now() - start_time).total_seconds()
             update_stats(result.get("accident_detected", False), processing_time)
             
         except Exception as e:
-            st.error(f"❌ Error processing file: {str(e)}")
+            st.error(f"Unexpected error: {str(e)}")
+            if st.checkbox("Show detailed error information"):
+                st.code(traceback.format_exc())
         finally:
             # Clean up
-            os.unlink(file_path)
+            try:
+                os.unlink(file_path)
+            except Exception as e:
+                st.warning(f"Warning: Could not delete temporary file: {str(e)}")
     else:
         # Display sample images or instructions
         st.info("👆 Upload an image or video to begin analysis")
