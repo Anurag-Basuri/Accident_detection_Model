@@ -25,9 +25,20 @@ sys.path.append(project_root)
 from src.detection.accident_detector import AccidentDetector
 from src.utils.visualization import create_severity_gauge, create_damage_bar_chart
 
+# Custom theme
+custom_theme = {
+    'primary': '#2196F3',
+    'danger': '#f44336',
+    'success': '#4CAF50',
+    'warning': '#ff9800',
+    'info': '#03a9f4',
+    'background': '#f5f5f5',
+    'text': '#212121'
+}
+
 # Set page config
 st.set_page_config(
-    page_title="Accident Detection System",
+    page_title="AI Accident Detection System",
     page_icon="🚗",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -42,8 +53,11 @@ if 'stats' not in st.session_state:
         'accidents_detected': 0,
         'false_positives': 0,
         'processing_time': 0,
-        'last_update': datetime.now()
+        'last_update': datetime.now(),
+        'detected_objects': {}
     }
+if 'detection_history' not in st.session_state:
+    st.session_state.detection_history = []
 
 # Custom CSS
 st.markdown("""
@@ -56,83 +70,120 @@ st.markdown("""
         width: 100%;
         background-color: #2196F3;
         color: white;
-        border-radius: 5px;
-        padding: 10px 20px;
+        border-radius: 8px;
+        padding: 12px 24px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     }
     .frame-container {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
+        gap: 15px;
         justify-content: center;
+        padding: 20px;
     }
     .frame-item {
-        flex: 0 0 calc(33.33% - 10px);
-        max-width: calc(33.33% - 10px);
-        border-radius: 10px;
+        flex: 0 0 calc(33.33% - 20px);
+        max-width: calc(33.33% - 20px);
+        border-radius: 12px;
         overflow: hidden;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
     }
-    .severity-container {
-        display: flex;
-        justify-content: center;
-        margin: 20px 0;
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    .frame-item:hover {
+        transform: translateY(-5px);
     }
-    .damage-container {
-        margin: 20px 0;
+    .severity-container, .damage-container {
         background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        margin: 20px 0;
+        transition: all 0.3s ease;
+    }
+    .severity-container:hover, .damage-container:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
     }
     .emergency-info {
         background-color: #ffebee;
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 20px;
+        border-radius: 12px;
+        margin: 15px 0;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        border-left: 5px solid #f44336;
     }
     .stats-card {
         background-color: white;
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 20px;
+        border-radius: 12px;
+        margin: 15px 0;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+    }
+    .stats-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
     }
     .detection-box {
         position: relative;
-        border: 2px solid #2196F3;
-        border-radius: 5px;
-        margin: 5px;
-        padding: 5px;
+        border: 3px solid #2196F3;
+        border-radius: 8px;
+        margin: 8px;
+        padding: 8px;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(33, 150, 243, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(33, 150, 243, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(33, 150, 243, 0); }
     }
     .detection-label {
         position: absolute;
-        top: -20px;
+        top: -25px;
         left: 0;
         background-color: #2196F3;
         color: white;
-        padding: 2px 5px;
-        border-radius: 3px;
-        font-size: 12px;
-    }
-    .progress-container {
-        margin: 20px 0;
-        padding: 20px;
-        background-color: white;
-        border-radius: 10px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 600;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .upload-container {
+        background-color: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        margin: 20px 0;
+        border: 2px dashed #2196F3;
+        text-align: center;
+    }
+    .metric-container {
+        display: flex;
+        gap: 20px;
+        margin: 20px 0;
+    }
+    .metric-card {
+        flex: 1;
+        background-color: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        text-align: center;
     }
     </style>
 """, unsafe_allow_html=True)
 
-def draw_detection_boxes(image, detections, accident_detected=False):
+def draw_detection_boxes(image, detections):
     """Draw detection boxes with enhanced visualization"""
     img = image.copy()
     height, width = img.shape[:2]
+    detected_objects = {}
     
     for box in detections.boxes:
         # Get box coordinates
@@ -140,34 +191,75 @@ def draw_detection_boxes(image, detections, accident_detected=False):
         cls = int(box.cls)
         conf = float(box.conf[0])
         
-        # Draw rectangle
-        color = (0, 0, 255) if accident_detected else (0, 255, 0)
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        # Get object class name
+        class_name = st.session_state.detector.vehicle_classes.get(cls, {}).get('name', 'unknown')
         
-        # Add label
-        label = f"{st.session_state.detector.vehicle_classes.get(cls, {}).get('name', 'unknown')} {conf:.2f}"
-        (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        # Update detected objects count
+        detected_objects[class_name] = detected_objects.get(class_name, 0) + 1
         
-        # Draw label background
-        cv2.rectangle(img, (x1, y1 - label_height - 10), (x1 + label_width, y1), color, -1)
+        # Generate unique color for each class
+        color = plt.cm.rainbow(hash(class_name) % 256 / 256)[:3]
+        color = tuple(int(c * 255) for c in color)
         
-        # Add label text
-        cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        # Draw rectangle with animation effect
+        thickness = 3
+        for i in range(thickness):
+            alpha = (thickness - i) / thickness
+            overlay = img.copy()
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1)
+            img = cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
+        
+        # Add label with enhanced design
+        label = f"{class_name} {conf:.2f}"
+        (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+        
+        # Draw label background with gradient
+        gradient_colors = [(c * 0.7, c * 0.85, c) for c in color]
+        for i in range(label_height + 10):
+            y = y1 - i - 5
+            alpha = i / (label_height + 10)
+            current_color = tuple(int(c[0] * (1-alpha) + c[1] * alpha) for c in zip(*gradient_colors))
+            cv2.rectangle(img, (x1, y), (x1 + label_width, y+1), current_color, -1)
+        
+        # Add label text with shadow
+        cv2.putText(img, label, (x1+1, y1-7), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,0), 2)
+        cv2.putText(img, label, (x1, y1-8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,255), 2)
     
-    return img
+    return img, detected_objects
 
 def display_detection_progress():
-    """Display a progress bar for detection process"""
+    """Display an animated progress bar for detection process"""
     progress_bar = st.progress(0)
     status_text = st.empty()
     
     for i in range(100):
-        progress_bar.progress(i + 1)
-        status_text.text(f"Processing... {i + 1}%")
-        time.sleep(0.01)
+        progress = i + 1
+        progress_bar.progress(progress)
+        if progress < 30:
+            status_text.text("🔍 Initializing detection models...")
+        elif progress < 60:
+            status_text.text("🎯 Analyzing objects in the scene...")
+        elif progress < 90:
+            status_text.text("⚡ Processing detection results...")
+        else:
+            status_text.text("✨ Finalizing analysis...")
+        time.sleep(0.02)
     
     progress_bar.empty()
     status_text.empty()
+
+def display_object_summary(detected_objects):
+    """Display a summary of detected objects"""
+    if detected_objects:
+        st.subheader("🎯 Detection Summary")
+        cols = st.columns(len(detected_objects))
+        for col, (obj_type, count) in zip(cols, detected_objects.items()):
+            with col:
+                st.metric(
+                    label=obj_type.title(),
+                    value=count,
+                    delta=f"+{count} detected"
+                )
 
 def update_stats(accident_detected, processing_time):
     """Update statistics"""
@@ -234,17 +326,21 @@ def display_stats():
                     st.error("Please fill in all required fields")
 
 def main():
-    st.title("🚗 Accident Detection System")
+    st.title("🚗 AI-Powered Accident Detection System")
+    st.markdown("### 🔍 Upload an image or video for accident detection and analysis")
     
     # Display statistics in sidebar
     display_stats()
     
     # File uploader with enhanced UI
-    uploaded_file = st.file_uploader(
-        "📁 Upload an image or video",
-        type=["jpg", "jpeg", "png", "mp4", "avi"],
-        help="Supported formats: JPG, PNG, MP4, AVI"
-    )
+    with st.container():
+        st.markdown('<div class="upload-container">', unsafe_allow_html=True)
+        uploaded_file = st.file_uploader(
+            "Drag and drop files here or click to browse",
+            type=["jpg", "jpeg", "png", "mp4", "avi"],
+            help="Supported formats: JPG, PNG, MP4, AVI"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
     
     if uploaded_file is not None:
         start_time = datetime.now()
@@ -261,8 +357,35 @@ def main():
                 
                 # Process file based on type
                 if uploaded_file.type.startswith('image'):
-                    result = st.session_state.detector.process_image(file_path)
-                    display_image_results(result, file_path)
+                    # Use YOLO for image detection
+                    image = cv2.imread(file_path)
+                    if image is None:
+                        st.error("❌ Failed to read image file")
+                        return
+                    
+                    # Run YOLO detection
+                    detections = st.session_state.detector.yolo_model(image)
+                    
+                    # Draw detection boxes
+                    annotated_image, detected_objects = draw_detection_boxes(image, detections)
+                    
+                    # Display results
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        st.image(cv2.cvtColor(annotated_image, cv2.COLOR_BGR2RGB),
+                                caption="Detection Results",
+                                use_column_width=True)
+                    
+                    with col2:
+                        display_object_summary(detected_objects)
+                        
+                        # Analyze for accidents
+                        if len(detected_objects) >= 2:  # At least 2 vehicles
+                            st.error("🚨 Potential Accident Detected!")
+                            display_severity_info({"severity": {"level": "Moderate", "score": 0.6}})
+                        else:
+                            st.success("✅ No Accident Detected")
+                
                 else:
                     result = st.session_state.detector.process_video(file_path)
                     display_video_results(result, file_path)
@@ -276,6 +399,22 @@ def main():
         finally:
             # Clean up
             os.unlink(file_path)
+    else:
+        # Display sample images or instructions
+        st.info("👆 Upload an image or video to begin analysis")
+        
+        # Display features
+        st.markdown("### ✨ Key Features")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown("🎯 **Real-time Detection**")
+            st.markdown("Instantly detect vehicles and accidents")
+        with col2:
+            st.markdown("📊 **Detailed Analysis**")
+            st.markdown("Get comprehensive accident reports")
+        with col3:
+            st.markdown("🚑 **Emergency Response**")
+            st.markdown("Quick access to emergency contacts")
 
 def display_image_results(result, image_path):
     """Display results for image processing"""
