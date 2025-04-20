@@ -92,3 +92,11 @@ processed-datasets.zip
 *.csv
 *.mp4
 *.jpg
+
+
+data/videos/
+data/images/
+data/labels/
+data/videos/test_video.mp4
+data/images/test_image.jpg
+data/labels/test_image.txt
