@@ -366,8 +366,28 @@ def process_image(image_path):
         
         # Run detection
         detections = st.session_state.detector.yolo_model(image)
+        
+        # Check if detections is a list (YOLO v8 format)
+        if isinstance(detections, list):
+            if not detections:
+                return {
+                    'success': True,
+                    'image': image,
+                    'detected_objects': {},
+                    'accident_detected': False
+                }
+            # Get the first detection result
+            detections = detections[0]
+        
+        # Check if detections has boxes attribute
         if not hasattr(detections, 'boxes'):
-            raise ValueError("Invalid detection results")
+            # If no boxes, return empty results
+            return {
+                'success': True,
+                'image': image,
+                'detected_objects': {},
+                'accident_detected': False
+            }
         
         # Draw detection boxes
         annotated_image, detected_objects = draw_detection_boxes(image, detections)
