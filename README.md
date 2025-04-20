@@ -6,46 +6,86 @@ Road accidents are a significant issue, causing loss of life and property. Delay
 
 ## Features
 
-- **Accident Detection**: Machine learning-based classification to distinguish between accident and non-accident events.
-- **Severity Assessment**: Use of object detection techniques (e.g., YOLO, Faster R-CNN) to evaluate accident severity.
-- **Automated Notifications**: Real-time alerts to emergency services upon accident detection.
-- **Insurance Reporting**: Automated generation of structured reports to assist in claim processing and dispute resolution.
+- **Accident Detection**: Real-time detection of accidents using object detection and tracking
+- **Severity Assessment**: Analysis of collision patterns and vehicle behavior
+- **Automated Notifications**: Real-time alerts to emergency services upon accident detection
+- **Insurance Reporting**: Automated generation of structured reports to assist in claim processing
 
 ## Technical Implementation
 
-### Model Architecture
+### Core Components
 
-- **Hybrid CNN-LSTM Model**: Combines EfficientNetB0 for spatial feature extraction with LSTM for temporal sequence learning
-- **Key Components**:
-  - TimeDistributed layers for video sequence processing
-  - LSTM layers (128 and 64 units) for temporal pattern recognition
-  - Batch normalization and dropout for regularization
-  - Binary classification output (accident vs non-accident)
+#### 1. Object Detection (YOLOv8)
 
-### Training Configuration
+- **Model**: YOLOv8 pretrained on COCO dataset
+- **Capabilities**:
+  - Detection of 80 common classes (cars, trucks, buses, etc.)
+  - High-precision bounding box detection
+  - Real-time processing capabilities
+- **Output Format**:
+  ```json
+  [{"label": "car", "confidence": 0.9, "bbox": [x1, y1, x2, y2]}, ...]
+  ```
 
-- **Image Processing**:
-  - Input size: 224x224 pixels
-  - Sequence length: 30 frames
-  - Batch size: 8 (training), 16 (evaluation)
-- **Optimization**:
-  - Optimizer: AdamW with learning rate 1e-4
-  - Loss function: Binary cross-entropy
-  - Early stopping with patience of 10 epochs
-  - Learning rate reduction on plateau
+#### 2. Object Tracking (DeepSORT/ByteTrack)
 
-### Data Pipeline
+- **Purpose**: Track objects across video frames
+- **Features**:
+  - Object ID assignment and maintenance
+  - Motion prediction and tracking
+  - Speed and direction calculation
+- **Output**: Tracked object information with IDs and trajectories
 
-- **Preprocessing**:
-  - Video frame extraction
-  - Dataset merging and splitting
-  - Data augmentation for training
-  - Validation set preparation
-- **Evaluation**:
-  - Comprehensive performance metrics
-  - Confusion matrix visualization
-  - Training history plotting
-  - Results export to CSV
+### Detection Pipeline
+
+```
+           Video
+             ↓
+      [1] Frame Extraction
+             ↓
+      [2] YOLOv8 Detection
+             ↓
+   [3] DeepSORT Tracking
+             ↓
+[4] Accident Heuristics
+             ↓
+     🚨 Accident Detection
+```
+
+### Accident Detection Logic
+
+#### Heuristic Rules
+
+1. **Bounding Box Overlap**
+
+   - Sudden and significant overlap between vehicle bounding boxes
+   - Threshold-based collision detection
+
+2. **Speed Analysis**
+
+   - Sudden deceleration detection
+   - Abnormal speed patterns
+   - Impact velocity calculation
+
+3. **Direction Analysis**
+
+   - Opposing direction collision detection
+   - Abnormal trajectory changes
+   - Post-impact movement patterns
+
+4. **Post-Impact Behavior**
+   - Vehicle immobilization detection
+   - Multiple vehicle involvement
+   - Secondary collision detection
+
+### Technical Stack
+
+| Component            | Technology           |
+| -------------------- | -------------------- |
+| Object Detection     | YOLOv8 (ultralytics) |
+| Object Tracking      | DeepSORT/ByteTrack   |
+| Video Processing     | OpenCV               |
+| Programming Language | Python               |
 
 ## Project Structure
 
@@ -76,6 +116,9 @@ cd [repository-name]
 2. Install dependencies:
 
 ```bash
+pip install ultralytics
+pip install opencv-python
+pip install deep_sort_realtime
 pip install -r requirements.txt
 ```
 
@@ -119,7 +162,7 @@ Road accidents, particularly in the Indian subcontinent, are exacerbated by traf
 
 ## Proposed Solution
 
-The system will utilize machine learning and computer vision to detect accidents in real-time, classify their severity, and automate emergency notifications. The model will be trained on real-world accident datasets to ensure high accuracy and relevance.
+The system will utilize YOLOv8 and DeepSORT to detect and track vehicles in real-time, applying heuristic rules to identify potential accidents. The system will be trained on real-world traffic scenarios to ensure high accuracy and relevance.
 
 By incorporating AI into road safety, this project aims to:
 
@@ -129,7 +172,7 @@ By incorporating AI into road safety, this project aims to:
 
 ## Scope
 
-This project focuses on image/video-based accident detection and does not include factors like weather or driver behavior analysis.
+This project focuses on image/video-based accident detection using object detection and tracking, and does not include factors like weather or driver behavior analysis.
 
 ## Future Improvements
 
@@ -145,7 +188,7 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## Acknowledgments
 
-- EfficientNetB0 for feature extraction
-- TensorFlow and Keras for deep learning framework
+- YOLOv8 for object detection
+- DeepSORT/ByteTrack for object tracking
 - OpenCV for video processing
 - Various open-source datasets for training and validation
