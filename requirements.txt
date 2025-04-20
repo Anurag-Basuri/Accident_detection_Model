@@ -1,9 +1,9 @@
 # Core Dependencies
-ultralytics>=8.0.0  # YOLOv8
+ultralytics==8.1.27  # YOLOv8
 deep-sort-realtime>=1.3.0  # Object tracking
-opencv-python>=4.8.0  # Video processing
-numpy>=1.24.0  # Numerical operations
-torch>=2.0.0  # Deep learning framework
+opencv-python==4.9.0.80  # Video processing
+numpy==1.26.4  # Numerical operations
+torch==2.2.1  # Deep learning framework
 pyyaml>=6.0.0  # Configuration files
 tensorflow>=2.12.0  # Deep learning framework
 
@@ -13,9 +13,9 @@ scikit-learn>=1.2.0  # Machine learning utilities
 scipy>=1.10.0  # Scientific computing
 
 # Visualization
-matplotlib>=3.7.0  # Plotting
+matplotlib==3.8.3  # Plotting
 seaborn>=0.12.0  # Statistical visualization
-pillow>=9.5.0  # Image processing
+pillow==10.2.0  # Image processing
 
 # Development Tools
 pytest>=7.0.0  # Testing framework
@@ -30,10 +30,10 @@ sphinx>=6.0.0  # Documentation
 sphinx-rtd-theme>=1.2.0  # Documentation theme
 
 # GPU Support (Optional)
-torchvision>=0.15.0  # Vision utilities
+torchvision==0.17.1  # Vision utilities
 cuda-python>=11.8.0  # CUDA support
 
 # Additional Utilities
 tqdm>=4.65.0  # Progress bars
-python-dotenv>=1.0.0  # Environment variables
+python-dotenv==1.0.1  # Environment variables
 loguru>=0.7.0  # Logging

@@ -1,0 +1,3 @@
+"""
+Accident detection module
+""" 
