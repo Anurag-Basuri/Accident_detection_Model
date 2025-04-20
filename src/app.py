@@ -373,6 +373,7 @@ def process_image(image_path):
         annotated_image = image.copy()
         detected_objects = {}
         
+        # Draw vehicle boxes and calculate statistics
         for box in result["detections"]:
             cls = int(box.cls)
             conf = float(box.conf[0])
@@ -381,22 +382,65 @@ def process_image(image_path):
             # Update detected objects count
             detected_objects[vehicle_type] = detected_objects.get(vehicle_type, 0) + 1
             
-            # Draw box
+            # Get box coordinates
             x1, y1, x2, y2 = map(int, box.xyxy[0])
-            color = (0, 0, 255) if result["accident_detected"] else (0, 255, 0)
-            cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
             
-            # Add label
+            # Determine box color based on severity
+            severity_color = {
+                "Minor": (0, 255, 0),    # Green
+                "Moderate": (0, 165, 255),  # Orange
+                "Severe": (0, 0, 255)    # Red
+            }
+            color = severity_color[result["severity"]["level"]]
+            
+            # Draw box with thickness based on confidence
+            thickness = max(1, int(conf * 3))
+            cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, thickness)
+            
+            # Add label with confidence
             label = f"{vehicle_type} {conf:.2f}"
-            cv2.putText(annotated_image, label, (x1, y1-10),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            (label_width, label_height), _ = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            
+            # Draw label background
+            cv2.rectangle(annotated_image,
+                         (x1, y1 - label_height - 10),
+                         (x1 + label_width, y1),
+                         color, -1)
+            
+            # Add label text
+            cv2.putText(annotated_image, label,
+                       (x1, y1 - 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                       (255, 255, 255), 2)
+        
+        # Add severity indicator
+        severity = result["severity"]
+        cv2.putText(annotated_image,
+                   f"Severity: {severity['level']}",
+                   (10, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1,
+                   severity_color[severity["level"]], 2)
+        
+        # Add accident factors
+        factors = result["factors"]
+        y_pos = 70
+        for factor, value in factors.items():
+            if factor != "severity_score":
+                text = f"{factor}: {value:.2f}"
+                cv2.putText(annotated_image, text,
+                           (10, y_pos),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                           (255, 255, 255), 2)
+                y_pos += 30
         
         return {
             'success': True,
             'image': annotated_image,
             'detected_objects': detected_objects,
             'accident_detected': result["accident_detected"],
-            'overlap': result["overlap"]
+            'severity': severity,
+            'factors': factors
         }
     except Exception as e:
         return {
@@ -489,7 +533,7 @@ def main():
                         
                         if result['accident_detected']:
                             st.error("🚨 Potential Accident Detected!")
-                            display_severity_info({"severity": {"level": "Moderate", "score": 0.6}})
+                            display_severity_info(result['severity'])
                         else:
                             st.success("✅ No Accident Detected")
                 
@@ -546,7 +590,7 @@ def display_image_results(result, image_path):
     with col2:
         if result["accident_detected"]:
             st.error("🚨 Accident Detected!")
-            display_severity_info(result)
+            display_severity_info(result['severity'])
             display_emergency_info()
         else:
             st.success("✅ No Accident Detected")
@@ -561,7 +605,7 @@ def display_video_results(result, video_path):
         col1, col2 = st.columns([1, 1])
         
         with col1:
-            display_severity_info(result)
+            display_severity_info(result['severity'])
         
         with col2:
             display_insurance_info(result)
@@ -576,10 +620,9 @@ def display_video_results(result, video_path):
         st.success("✅ No Accident Detected")
         st.info("The video appears to be safe.")
 
-def display_severity_info(result):
+def display_severity_info(severity):
     """Display severity information"""
     st.subheader("Accident Severity")
-    severity = result.get("severity", {})
     
     if severity and severity.get("level") != "Unknown":
         # Create and display severity gauge
