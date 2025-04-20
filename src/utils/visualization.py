@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import streamlit as st
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 def create_severity_gauge(severity_score: float) -> plt.Figure:
     """Create a gauge chart for severity visualization"""
@@ -22,7 +22,8 @@ def create_severity_gauge(severity_score: float) -> plt.Figure:
     r = np.ones(100)
     ax.plot(theta, r, color='black', linewidth=2)
     
-    # Fill based on severity
+    # Fill based on severity (ensure score is between 0 and 1)
+    severity_score = max(0.0, min(1.0, severity_score))
     severity_theta = severity_score * np.pi
     theta_fill = np.linspace(0, severity_theta, 100)
     r_fill = np.ones(100)
@@ -35,12 +36,15 @@ def create_severity_gauge(severity_score: float) -> plt.Figure:
     
     return fig
 
-def create_damage_bar_chart(damage_details: Dict) -> plt.Figure:
+def create_damage_bar_chart(damage_details: Dict[str, Dict[str, float]]) -> plt.Figure:
     """Create a bar chart for damage visualization"""
+    if not damage_details:
+        return plt.figure(figsize=(8, 4))
+        
     fig, ax = plt.subplots(figsize=(8, 4))
     
     vehicle_types = list(damage_details.keys())
-    total_damages = [details['total_damage'] for details in damage_details.values()]
+    total_damages = [details.get('total_damage', 0) for details in damage_details.values()]
     
     bars = ax.bar(vehicle_types, total_damages, color='#2196F3')
     
@@ -57,8 +61,11 @@ def create_damage_bar_chart(damage_details: Dict) -> plt.Figure:
     
     return fig
 
-def create_speed_heatmap(speeds: Dict) -> plt.Figure:
+def create_speed_heatmap(speeds: Dict[str, float]) -> plt.Figure:
     """Create a heatmap for speed visualization"""
+    if not speeds:
+        return plt.figure(figsize=(6, 3))
+        
     fig, ax = plt.subplots(figsize=(6, 3))
     
     vehicle_types = list(speeds.keys())
@@ -79,42 +86,52 @@ def create_speed_heatmap(speeds: Dict) -> plt.Figure:
     
     return fig
 
-def draw_vehicle_boxes(frame: np.ndarray, detections: List, 
+def draw_vehicle_boxes(frame: np.ndarray, detections: List[Any], 
                       accident_detected: bool = False) -> np.ndarray:
     """Draw vehicle bounding boxes with enhanced visualization"""
+    if frame is None or not detections:
+        return frame
+        
     annotated_frame = frame.copy()
     
     # Define colors
     color = (0, 0, 255) if accident_detected else (0, 255, 0)
     
     for box in detections:
-        x1, y1, x2, y2 = map(int, box.xyxy[0])
-        
-        # Draw rectangle with thicker lines
-        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 3)
-        
-        # Add label with background
-        label = f"{box.cls} {box.conf[0]:.2f}"
-        (label_width, label_height), _ = cv2.getTextSize(
-            label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-        
-        # Draw label background
-        cv2.rectangle(annotated_frame, 
-                     (x1, y1 - label_height - 10),
-                     (x1 + label_width, y1),
-                     color, -1)
-        
-        # Add label text
-        cv2.putText(annotated_frame, label,
-                   (x1, y1 - 5),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                   (255, 255, 255), 2)
+        try:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            
+            # Draw rectangle with thicker lines
+            cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 3)
+            
+            # Add label with background
+            label = f"{box.cls} {box.conf[0]:.2f}"
+            (label_width, label_height), _ = cv2.getTextSize(
+                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            
+            # Draw label background
+            cv2.rectangle(annotated_frame, 
+                         (x1, y1 - label_height - 10),
+                         (x1 + label_width, y1),
+                         color, -1)
+            
+            # Add label text
+            cv2.putText(annotated_frame, label,
+                       (x1, y1 - 5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                       (255, 255, 255), 2)
+        except (AttributeError, IndexError, TypeError) as e:
+            print(f"Error drawing box: {e}")
+            continue
     
     return annotated_frame
 
 def create_impact_visualization(overlap: float) -> plt.Figure:
     """Create a visualization for impact/overlap"""
     fig, ax = plt.subplots(figsize=(4, 4))
+    
+    # Ensure overlap is between 0 and 1
+    overlap = max(0.0, min(1.0, overlap))
     
     # Create circles for vehicles
     circle1 = plt.Circle((0.3, 0.5), 0.2, color='#2196F3', alpha=0.5)
