@@ -1,8 +1,9 @@
 import cv2
 import numpy as np
 from ultralytics import YOLO
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Tuple
 import os
+from collections import defaultdict
 
 class AccidentDetector:
     def __init__(self):
@@ -28,6 +29,10 @@ class AccidentDetector:
             "moderate": {"vehicle_count": 4, "speed_factor": 0.6, "overlap_factor": 0.6},
             "severe": {"vehicle_count": 6, "speed_factor": 0.8, "overlap_factor": 0.8}
         }
+        
+        # Vehicle tracking
+        self.tracked_vehicles = defaultdict(dict)
+        self.frame_rate = 30  # Default frame rate, will be updated from video
         
     def _load_image_model(self):
         """Load your existing image model"""
@@ -99,66 +104,49 @@ class AccidentDetector:
         return annotated_frame
     
     def process_video(self, video_path: str) -> Dict:
-        """
-        Process a video using both YOLOv8 and your image model
-        
-        Args:
-            video_path: Path to the video file
-            
-        Returns:
-            Dictionary containing detection results and visualization frames
-        """
+        """Process video and detect accidents"""
         cap = cv2.VideoCapture(video_path)
-        results = {
-            "accident_detected": False,
-            "type": "video",
-            "frames": [],
-            "visualization_frames": [],
-            "severity": None,
-            "insurance_details": None
-        }
+        self.frame_rate = cap.get(cv2.CAP_PROP_FPS)
+        self.tracked_vehicles.clear()  # Reset tracking for new video
         
-        frame_count = 0
+        frames = []
+        frame_number = 0
+        
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
                 
             # Process every 5th frame to save computation
-            if frame_count % 5 == 0:
-                # YOLOv8 detection
-                yolo_results = self.yolo_model(frame)
+            if frame_number % 5 == 0:
+                # Run YOLOv8 detection
+                results = self.yolo_model(frame)
                 
-                # Check for vehicles
-                if self._check_vehicles(yolo_results):
-                    # Validate with image model
-                    img = cv2.resize(frame, (224, 224))
-                    img = img / 255.0
-                    img = np.expand_dims(img, axis=0)
-                    
-                    accident_detected = self.image_model.predict(img)[0][0] > 0.5
-                    if accident_detected:
-                        results["accident_detected"] = True
-                        results["frames"].append({
-                            "frame_number": frame_count,
-                            "detections": yolo_results
-                        })
-                
-                # Visualize detections
-                vis_frame = self.visualize_detections(frame, yolo_results, 
-                                                    results["accident_detected"])
-                results["visualization_frames"].append(vis_frame)
+                # Check for vehicles and potential accidents
+                if self._check_vehicles(results):
+                    frames.append({
+                        "frame_number": frame_number,
+                        "detections": results,
+                        "frame": frame
+                    })
             
-            frame_count += 1
+            frame_number += 1
             
         cap.release()
         
-        # If accident detected, analyze severity
-        if results["accident_detected"]:
-            results["severity"] = self._calculate_severity(results["frames"])
-            results["insurance_details"] = self._assess_insurance(results["frames"])
+        # Analyze frames for accidents
+        if frames:
+            severity = self._calculate_severity(frames)
+            insurance = self._assess_insurance(frames)
             
-        return results
+            return {
+                "accident_detected": True,
+                "severity": severity,
+                "insurance": insurance,
+                "frames": frames
+            }
+        
+        return {"accident_detected": False}
     
     def _check_vehicles(self, yolo_results) -> bool:
         """Check if there are vehicles in the frame"""
@@ -287,10 +275,53 @@ class AccidentDetector:
             "vehicle_details": vehicle_details
         }
     
-    def _estimate_speed(self, box, frame_number):
-        """Simple speed estimation based on bounding box movement"""
-        # This is a placeholder - implement proper speed estimation
-        return np.random.uniform(0, 100)  # Random speed for demonstration
+    def _estimate_speed(self, box, frame_number) -> float:
+        """Estimate vehicle speed based on bounding box movement"""
+        cls = int(box.cls)
+        if cls not in self.vehicle_classes:
+            return 0.0
+            
+        # Get current box center
+        x1, y1, x2, y2 = box.xyxy[0]
+        current_center = ((x1 + x2) / 2, (y1 + y2) / 2)
+        
+        # Get previous position if exists
+        vehicle_id = f"{cls}_{frame_number}"
+        if vehicle_id in self.tracked_vehicles:
+            prev_center = self.tracked_vehicles[vehicle_id]["center"]
+            prev_frame = self.tracked_vehicles[vehicle_id]["frame"]
+            
+            # Calculate pixel distance moved
+            pixel_distance = np.sqrt(
+                (current_center[0] - prev_center[0])**2 + 
+                (current_center[1] - prev_center[1])**2
+            )
+            
+            # Calculate time difference
+            time_diff = (frame_number - prev_frame) / self.frame_rate
+            
+            # Convert to speed (pixels per second)
+            speed = pixel_distance / time_diff if time_diff > 0 else 0
+            
+            # Convert to km/h (assuming 1 pixel = 0.1 meters)
+            speed_kmh = speed * 0.1 * 3.6
+            
+            # Update tracking
+            self.tracked_vehicles[vehicle_id] = {
+                "center": current_center,
+                "frame": frame_number,
+                "speed": speed_kmh
+            }
+            
+            return speed_kmh
+        else:
+            # First detection of this vehicle
+            self.tracked_vehicles[vehicle_id] = {
+                "center": current_center,
+                "frame": frame_number,
+                "speed": 0.0
+            }
+            return 0.0
     
     def _calculate_overlap(self, boxes):
         """Calculate maximum overlap between vehicle bounding boxes"""
