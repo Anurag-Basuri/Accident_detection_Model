@@ -14,12 +14,19 @@ class AccidentDetector:
         self.image_model_path = os.path.join(os.path.dirname(__file__), "../../models/image_model.h5")
         self.image_model = self._load_image_model()
         
-        # Vehicle classes
+        # Vehicle classes with base values
         self.vehicle_classes = {
-            2: "car",
-            3: "motorcycle",
-            5: "bus",
-            7: "truck"
+            2: {"name": "car", "base_value": 25000, "damage_factor": 1.0},
+            3: {"name": "motorcycle", "base_value": 8000, "damage_factor": 0.8},
+            5: {"name": "bus", "base_value": 100000, "damage_factor": 1.5},
+            7: {"name": "truck", "base_value": 80000, "damage_factor": 1.3}
+        }
+        
+        # Severity thresholds
+        self.severity_thresholds = {
+            "minor": {"vehicle_count": 2, "speed_factor": 0.3, "overlap_factor": 0.3},
+            "moderate": {"vehicle_count": 4, "speed_factor": 0.6, "overlap_factor": 0.6},
+            "severe": {"vehicle_count": 6, "speed_factor": 0.8, "overlap_factor": 0.8}
         }
         
     def _load_image_model(self):
@@ -80,7 +87,7 @@ class AccidentDetector:
                     cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
                     
                     # Add label
-                    label = f"{self.vehicle_classes[cls]} {box.conf[0]:.2f}"
+                    label = f"{self.vehicle_classes[cls]['name']} {box.conf[0]:.2f}"
                     cv2.putText(annotated_frame, label, (x1, y1-10),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
         
@@ -161,42 +168,150 @@ class AccidentDetector:
                     return True
         return False
     
-    def _calculate_severity(self, frames: List[Dict]) -> str:
-        """Calculate accident severity based on detections"""
+    def _calculate_severity(self, frames: List[Dict]) -> Dict:
+        """Calculate accident severity with detailed analysis"""
         if not frames:
-            return "Unknown"
+            return {"level": "Unknown", "factors": {}}
             
-        # Simple severity calculation based on vehicle count
-        vehicle_count = 0
-        for frame in frames:
-            for result in frame["detections"]:
-                vehicle_count += len([box for box in result.boxes 
-                                    if int(box.cls) in self.vehicle_classes])
+        # Initialize metrics
+        vehicle_counts = {}
+        max_speeds = {}
+        overlap_areas = []
         
-        if vehicle_count <= 2:
-            return "Minor"
-        elif vehicle_count <= 4:
-            return "Moderate"
+        # Analyze each frame
+        for frame in frames:
+            frame_vehicles = {}
+            
+            for result in frame["detections"]:
+                for box in result.boxes:
+                    cls = int(box.cls)
+                    if cls in self.vehicle_classes:
+                        # Count vehicles
+                        vehicle_type = self.vehicle_classes[cls]["name"]
+                        frame_vehicles[vehicle_type] = frame_vehicles.get(vehicle_type, 0) + 1
+                        
+                        # Calculate speed (simple approximation)
+                        if len(frames) > 1:
+                            speed = self._estimate_speed(box, frame["frame_number"])
+                            max_speeds[vehicle_type] = max(max_speeds.get(vehicle_type, 0), speed)
+            
+            # Update vehicle counts
+            for v_type, count in frame_vehicles.items():
+                vehicle_counts[v_type] = max(vehicle_counts.get(v_type, 0), count)
+            
+            # Calculate overlap areas
+            overlap = self._calculate_overlap(result.boxes)
+            overlap_areas.append(overlap)
+        
+        # Calculate severity factors
+        total_vehicles = sum(vehicle_counts.values())
+        avg_speed = np.mean(list(max_speeds.values())) if max_speeds else 0
+        max_overlap = max(overlap_areas) if overlap_areas else 0
+        
+        # Determine severity level
+        severity_score = (
+            (total_vehicles / self.severity_thresholds["severe"]["vehicle_count"]) * 0.4 +
+            (avg_speed / 100) * 0.3 +  # Assuming max speed of 100
+            max_overlap * 0.3
+        )
+        
+        if severity_score < 0.3:
+            level = "Minor"
+        elif severity_score < 0.7:
+            level = "Moderate"
         else:
-            return "Severe"
+            level = "Severe"
+        
+        return {
+            "level": level,
+            "factors": {
+                "vehicle_count": total_vehicles,
+                "vehicle_types": vehicle_counts,
+                "max_speeds": max_speeds,
+                "max_overlap": max_overlap,
+                "severity_score": severity_score
+            }
+        }
     
     def _assess_insurance(self, frames: List[Dict]) -> Dict:
-        """Assess insurance details based on detections"""
+        """Assess insurance details with vehicle-specific calculations"""
         if not frames:
             return {"estimated_damage": 0, "vehicle_count": 0}
             
-        vehicle_count = 0
+        # Initialize damage assessment
+        total_damage = 0
+        vehicle_details = {}
+        
+        # Analyze each frame
         for frame in frames:
             for result in frame["detections"]:
-                vehicle_count += len([box for box in result.boxes 
-                                    if int(box.cls) in self.vehicle_classes])
+                for box in result.boxes:
+                    cls = int(box.cls)
+                    if cls in self.vehicle_classes:
+                        vehicle_type = self.vehicle_classes[cls]["name"]
+                        
+                        # Calculate damage based on vehicle type and confidence
+                        base_value = self.vehicle_classes[cls]["base_value"]
+                        damage_factor = self.vehicle_classes[cls]["damage_factor"]
+                        confidence = float(box.conf[0])
+                        
+                        # Damage calculation
+                        damage = base_value * damage_factor * confidence
+                        
+                        # Update vehicle details
+                        if vehicle_type not in vehicle_details:
+                            vehicle_details[vehicle_type] = {
+                                "count": 0,
+                                "total_damage": 0,
+                                "max_damage": 0
+                            }
+                        
+                        vehicle_details[vehicle_type]["count"] += 1
+                        vehicle_details[vehicle_type]["total_damage"] += damage
+                        vehicle_details[vehicle_type]["max_damage"] = max(
+                            vehicle_details[vehicle_type]["max_damage"],
+                            damage
+                        )
         
-        # Simple damage estimation based on vehicle count
-        base_damage = 5000  # Base damage per vehicle
-        total_damage = vehicle_count * base_damage
+        # Calculate total damage
+        total_damage = sum(v["total_damage"] for v in vehicle_details.values())
+        total_vehicles = sum(v["count"] for v in vehicle_details.values())
+        
+        # Calculate repair estimate (70-90% of total damage)
+        repair_estimate = total_damage * np.random.uniform(0.7, 0.9)
         
         return {
             "estimated_damage": total_damage,
-            "vehicle_count": vehicle_count,
-            "repair_estimate": total_damage * 0.8  # 80% of total damage
-        } 
+            "vehicle_count": total_vehicles,
+            "repair_estimate": repair_estimate,
+            "vehicle_details": vehicle_details
+        }
+    
+    def _estimate_speed(self, box, frame_number):
+        """Simple speed estimation based on bounding box movement"""
+        # This is a placeholder - implement proper speed estimation
+        return np.random.uniform(0, 100)  # Random speed for demonstration
+    
+    def _calculate_overlap(self, boxes):
+        """Calculate maximum overlap between vehicle bounding boxes"""
+        if len(boxes) < 2:
+            return 0
+            
+        max_overlap = 0
+        for i, box1 in enumerate(boxes):
+            for box2 in boxes[i+1:]:
+                if int(box1.cls) in self.vehicle_classes and int(box2.cls) in self.vehicle_classes:
+                    # Calculate IoU
+                    x1 = max(box1.xyxy[0][0], box2.xyxy[0][0])
+                    y1 = max(box1.xyxy[0][1], box2.xyxy[0][1])
+                    x2 = min(box1.xyxy[0][2], box2.xyxy[0][2])
+                    y2 = min(box1.xyxy[0][3], box2.xyxy[0][3])
+                    
+                    if x2 > x1 and y2 > y1:
+                        intersection = (x2 - x1) * (y2 - y1)
+                        area1 = (box1.xyxy[0][2] - box1.xyxy[0][0]) * (box1.xyxy[0][3] - box1.xyxy[0][1])
+                        area2 = (box2.xyxy[0][2] - box2.xyxy[0][0]) * (box2.xyxy[0][3] - box2.xyxy[0][1])
+                        iou = intersection / (area1 + area2 - intersection)
+                        max_overlap = max(max_overlap, iou)
+        
+        return max_overlap 
