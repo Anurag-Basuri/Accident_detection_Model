@@ -34,6 +34,11 @@ class AccidentDetector:
         self.tracked_vehicles = defaultdict(dict)
         self.frame_rate = 30  # Default frame rate, will be updated from video
         
+        # Detection thresholds
+        self.min_confidence = 0.5
+        self.min_vehicles = 2
+        self.min_overlap = 0.3
+        
     def _load_image_model(self):
         """Load your existing image model"""
         import tensorflow as tf
@@ -41,7 +46,7 @@ class AccidentDetector:
     
     def process_image(self, image_path: str) -> Dict:
         """
-        Process a single image using your image model
+        Process a single image using your custom model
         
         Args:
             image_path: Path to the image file
@@ -49,21 +54,175 @@ class AccidentDetector:
         Returns:
             Dictionary containing detection results
         """
-        # Read and preprocess image
-        img = cv2.imread(image_path)
-        img = cv2.resize(img, (224, 224))
-        img = img / 255.0
-        img = np.expand_dims(img, axis=0)
+        try:
+            # Read and preprocess image
+            img = cv2.imread(image_path)
+            if img is None:
+                return {"accident_detected": False, "confidence": 0.0, "error": "Failed to read image"}
+            
+            # Resize and normalize
+            img = cv2.resize(img, (224, 224))
+            img = img / 255.0
+            img = np.expand_dims(img, axis=0)
+            
+            # Make prediction using custom model
+            prediction = self.image_model.predict(img, verbose=0)
+            confidence = float(prediction[0][0])
+            is_accident = confidence > self.min_confidence
+            
+            # Validate with YOLO
+            yolo_results = self.yolo_model(image_path)
+            vehicles_detected = self._check_vehicles(yolo_results)
+            
+            # Final decision
+            if is_accident and vehicles_detected:
+                return {
+                    "accident_detected": True,
+                    "confidence": confidence,
+                    "type": "image"
+                }
+            else:
+                return {
+                    "accident_detected": False,
+                    "confidence": confidence,
+                    "type": "image"
+                }
+                
+        except Exception as e:
+            return {"accident_detected": False, "confidence": 0.0, "error": str(e)}
+    
+    def process_video(self, video_path: str) -> Dict:
+        """
+        Process video using YOLO model with enhanced detection logic
         
-        # Make prediction
-        prediction = self.image_model.predict(img)
-        is_accident = prediction[0][0] > 0.5
+        Args:
+            video_path: Path to the video file
+            
+        Returns:
+            Dictionary containing detection results
+        """
+        try:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                return {"accident_detected": False, "error": "Failed to open video"}
+            
+            self.frame_rate = cap.get(cv2.CAP_PROP_FPS)
+            self.tracked_vehicles.clear()
+            
+            frames = []
+            frame_number = 0
+            accident_frames = []
+            
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Process every 5th frame to save computation
+                if frame_number % 5 == 0:
+                    # Run YOLOv8 detection
+                    results = self.yolo_model(frame)
+                    
+                    # Check for vehicles and potential accidents
+                    if self._check_vehicles(results):
+                        # Enhanced accident detection
+                        is_accident = self._detect_accident_in_frame(results, frame_number)
+                        
+                        if is_accident:
+                            accident_frames.append({
+                                "frame_number": frame_number,
+                                "detections": results,
+                                "frame": frame.copy()
+                            })
+                
+                frame_number += 1
+            
+            cap.release()
+            
+            # Analyze frames for accidents
+            if accident_frames:
+                # Group consecutive accident frames
+                grouped_frames = self._group_consecutive_frames(accident_frames)
+                
+                # Analyze each group
+                for group in grouped_frames:
+                    severity = self._calculate_severity(group)
+                    insurance = self._assess_insurance(group)
+                    
+                    if severity["level"] != "Unknown":
+                        return {
+                            "accident_detected": True,
+                            "severity": severity,
+                            "insurance": insurance,
+                            "frames": group
+                        }
+            
+            return {"accident_detected": False}
+            
+        except Exception as e:
+            return {"accident_detected": False, "error": str(e)}
+    
+    def _detect_accident_in_frame(self, results, frame_number: int) -> bool:
+        """Enhanced accident detection in a single frame"""
+        # Check vehicle count
+        vehicle_count = sum(1 for box in results.boxes if int(box.cls) in self.vehicle_classes)
+        if vehicle_count < self.min_vehicles:
+            return False
         
-        return {
-            "accident_detected": bool(is_accident),
-            "confidence": float(prediction[0][0]),
-            "type": "image"
-        }
+        # Check for vehicle overlap
+        overlap = self._calculate_overlap(results.boxes)
+        if overlap < self.min_overlap:
+            return False
+        
+        # Check for high speeds
+        speeds = self._get_vehicle_speeds(results.boxes, frame_number)
+        if any(speed > 80 for speed in speeds.values()):  # High speed threshold
+            return True
+        
+        # Check for multiple vehicles in close proximity
+        if vehicle_count >= 3 and overlap > 0.5:
+            return True
+        
+        return False
+    
+    def _group_consecutive_frames(self, frames: List[Dict]) -> List[List[Dict]]:
+        """Group consecutive frames where accidents are detected"""
+        if not frames:
+            return []
+        
+        groups = []
+        current_group = [frames[0]]
+        
+        for i in range(1, len(frames)):
+            if frames[i]["frame_number"] - frames[i-1]["frame_number"] <= 10:  # Within 10 frames
+                current_group.append(frames[i])
+            else:
+                if len(current_group) >= 3:  # Minimum 3 frames for confirmation
+                    groups.append(current_group)
+                current_group = [frames[i]]
+        
+        if len(current_group) >= 3:
+            groups.append(current_group)
+        
+        return groups
+    
+    def _get_vehicle_speeds(self, boxes, frame_number: int) -> Dict[str, float]:
+        """Get speeds of detected vehicles"""
+        speeds = {}
+        for box in boxes:
+            cls = int(box.cls)
+            if cls in self.vehicle_classes:
+                vehicle_type = self.vehicle_classes[cls]["name"]
+                speed = self._estimate_speed(box, frame_number)
+                speeds[vehicle_type] = speed
+        return speeds
+    
+    def _check_vehicles(self, results) -> bool:
+        """Check if there are vehicles in the frame"""
+        vehicle_count = sum(1 for box in results.boxes 
+                          if int(box.cls) in self.vehicle_classes 
+                          and float(box.conf[0]) > self.min_confidence)
+        return vehicle_count >= self.min_vehicles
     
     def visualize_detections(self, frame, yolo_results, accident_detected=False):
         """
@@ -102,59 +261,6 @@ class AccidentDetector:
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         
         return annotated_frame
-    
-    def process_video(self, video_path: str) -> Dict:
-        """Process video and detect accidents"""
-        cap = cv2.VideoCapture(video_path)
-        self.frame_rate = cap.get(cv2.CAP_PROP_FPS)
-        self.tracked_vehicles.clear()  # Reset tracking for new video
-        
-        frames = []
-        frame_number = 0
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-                
-            # Process every 5th frame to save computation
-            if frame_number % 5 == 0:
-                # Run YOLOv8 detection
-                results = self.yolo_model(frame)
-                
-                # Check for vehicles and potential accidents
-                if self._check_vehicles(results):
-                    frames.append({
-                        "frame_number": frame_number,
-                        "detections": results,
-                        "frame": frame
-                    })
-            
-            frame_number += 1
-            
-        cap.release()
-        
-        # Analyze frames for accidents
-        if frames:
-            severity = self._calculate_severity(frames)
-            insurance = self._assess_insurance(frames)
-            
-            return {
-                "accident_detected": True,
-                "severity": severity,
-                "insurance": insurance,
-                "frames": frames
-            }
-        
-        return {"accident_detected": False}
-    
-    def _check_vehicles(self, yolo_results) -> bool:
-        """Check if there are vehicles in the frame"""
-        for result in yolo_results:
-            for box in result.boxes:
-                if int(box.cls) in self.vehicle_classes:
-                    return True
-        return False
     
     def _calculate_severity(self, frames: List[Dict]) -> Dict:
         """Calculate accident severity with detailed analysis"""
