@@ -4,9 +4,14 @@ import numpy as np
 from PIL import Image
 import tempfile
 import os
-from src.detection.accident_detector import AccidentDetector
-from src.utils.visualization import create_severity_gauge, create_damage_bar_chart
+import sys
 import matplotlib.pyplot as plt
+
+# Add the project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from detection.accident_detector import AccidentDetector
+from utils.visualization import create_severity_gauge, create_damage_bar_chart
 
 # Set page config
 st.set_page_config(

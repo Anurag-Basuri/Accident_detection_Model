@@ -1,16 +1,16 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="accident_detection",
-    version="0.1.0",
+    name="accident-detection",
+    version="0.1",
     packages=find_packages(),
     install_requires=[
-        "ultralytics",  # YOLOv8
-        "deep-sort-realtime",
+        "streamlit",
         "opencv-python",
         "numpy",
-        "torch",
-        "pyyaml",
+        "Pillow",
+        "matplotlib",
+        "ultralytics"
     ],
     author="Your Name",
     author_email="your.email@example.com",
