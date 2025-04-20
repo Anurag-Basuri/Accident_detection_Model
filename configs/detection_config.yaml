@@ -1,0 +1,30 @@
+collision_detection:
+  # Overlap detection parameters
+  min_overlap_area: 0.3 # Minimum overlap area ratio to consider as collision
+  sudden_overlap_threshold: 0.5 # Threshold for sudden overlap detection
+
+  # Speed-based detection
+  max_normal_speed: 50 # Maximum normal speed (pixels per frame)
+  sudden_speed_drop: 0.7 # Ratio of speed drop to consider as accident
+
+  # Direction-based detection
+  angle_threshold: 45 # Angle threshold for opposing directions (degrees)
+  direction_change_threshold: 60 # Sudden direction change threshold (degrees)
+
+  # Post-impact analysis
+  min_stationary_frames: 15 # Minimum frames to consider vehicle as stationary
+  max_post_impact_movement: 20 # Maximum movement after potential impact (pixels)
+
+  # Time windows
+  analysis_window: 30 # Number of frames to analyze for patterns
+  post_accident_window: 60 # Frames to analyze after potential accident
+
+alert_system:
+  min_confidence: 0.8 # Minimum confidence to trigger alert
+  cooldown_period: 300 # Minimum time between alerts (frames)
+
+visualization:
+  draw_boxes: true # Draw bounding boxes
+  draw_trajectories: true # Draw vehicle trajectories
+  draw_alerts: true # Draw accident alerts
+  max_trajectory_points: 30 # Maximum points in trajectory visualization

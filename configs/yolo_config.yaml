@@ -1,0 +1,21 @@
+model:
+  name: yolov8x.pt # Using the largest YOLOv8 model for better accuracy
+  confidence: 0.25 # Detection confidence threshold
+  iou: 0.45 # NMS IoU threshold
+
+inference:
+  image_size: [640, 640] # Input image size
+  device: cuda # Use GPU if available, else CPU
+  batch_size: 1 # For real-time processing
+
+classes: # Classes we're interested in (COCO dataset indices)
+  - 2 # car
+  - 5 # bus
+  - 7 # truck
+  - 3 # motorcycle
+  - 1 # bicycle
+
+tracking:
+  max_age: 30 # Maximum number of frames to keep track of an object
+  min_hits: 3 # Minimum number of detections before tracking
+  iou_threshold: 0.3 # IOU threshold for tracking
