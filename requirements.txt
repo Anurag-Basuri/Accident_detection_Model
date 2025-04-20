@@ -5,6 +5,7 @@ opencv-python>=4.8.0  # Video processing
 numpy>=1.24.0  # Numerical operations
 torch>=2.0.0  # Deep learning framework
 pyyaml>=6.0.0  # Configuration files
+tensorflow>=2.12.0  # Deep learning framework
 
 # Data Processing
 pandas>=2.0.0  # Data manipulation
