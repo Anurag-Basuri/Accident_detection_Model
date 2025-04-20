@@ -90,19 +90,97 @@ Road accidents are a significant issue, causing loss of life and property. Delay
 ## Project Structure
 
 ```
-├── train.py                 # Main training script
-├── evaluate.py              # Model evaluation
+accident_detection/
+├── src/
+│   ├── detection/
+│   │   ├── __init__.py
+│   │   ├── yolo_detector.py        # YOLOv8 implementation
+│   │   └── object_tracker.py       # DeepSORT implementation
+│   │
+│   ├── processing/
+│   │   ├── __init__.py
+│   │   ├── video_processor.py      # Video frame extraction and processing
+│   │   └── data_processor.py       # Data preprocessing utilities
+│   │
+│   ├── analysis/
+│   │   ├── __init__.py
+│   │   ├── collision_detector.py   # Accident detection logic
+│   │   └── movement_analyzer.py    # Vehicle movement analysis
+│   │
+│   └── utils/
+│       ├── __init__.py
+│       ├── visualization.py        # Visualization utilities
+│       └── metrics.py             # Performance metrics
+│
+├── configs/
+│   ├── yolo_config.yaml           # YOLOv8 configuration
+│   ├── tracker_config.yaml        # DeepSORT configuration
+│   └── detection_config.yaml      # Accident detection parameters
+│
+├── scripts/
+│   ├── train.py                   # Training script
+│   ├── evaluate.py                # Evaluation script
+│   └── inference.py               # Real-time inference script
+│
+├── notebooks/
+│   ├── data_exploration.ipynb     # Data analysis notebooks
+│   └── model_evaluation.ipynb     # Model performance analysis
+│
+├── tests/
+│   ├── test_detector.py           # Unit tests for detection
+│   ├── test_tracker.py            # Unit tests for tracking
+│   └── test_analysis.py           # Unit tests for analysis
+│
+├── data/
+│   ├── raw/                       # Raw video files
+│   ├── processed/                 # Processed frames and annotations
+│   └── results/                   # Detection results and metrics
+│
 ├── models/
-│   └── cnn_lstm_efficientnet.py  # Model architecture
-├── preprocessing/
-│   ├── extract_frames.py    # Video frame extraction
-│   ├── merge_datasets.py    # Dataset combination
-│   ├── load_and_visualize.py # Data visualization
-│   └── split-frames.py      # Data splitting
-├── datasets/                # Raw datasets
-├── processed-datasets/      # Processed data
-└── notebooks/              # Jupyter notebooks
+│   ├── weights/                   # Pretrained model weights
+│   └── saved_models/             # Saved model checkpoints
+│
+├── docs/
+│   ├── api/                       # API documentation
+│   ├── guides/                    # User guides
+│   └── examples/                  # Usage examples
+│
+├── requirements.txt               # Project dependencies
+├── setup.py                      # Package setup file
+├── README.md                     # Project documentation
+└── .gitignore                    # Git ignore file
 ```
+
+### Key Components
+
+1. **Source Code (`src/`)**:
+
+   - `detection/`: YOLOv8 and DeepSORT implementations
+   - `processing/`: Video and data processing utilities
+   - `analysis/`: Accident detection logic
+   - `utils/`: Helper functions and utilities
+
+2. **Configuration (`configs/`)**:
+
+   - Model parameters
+   - Detection thresholds
+   - System settings
+
+3. **Scripts (`scripts/`)**:
+
+   - Training and evaluation scripts
+   - Inference pipeline
+
+4. **Data Management (`data/`)**:
+
+   - Raw video storage
+   - Processed data
+   - Results and metrics
+
+5. **Documentation (`docs/`)**:
+   - API documentation
+   - User guides
+   - Examples
 
 ## Installation and Setup
 
