@@ -8,34 +8,31 @@ from typing import Dict, List, Tuple, Any
 def create_severity_gauge(severity_score: float) -> plt.Figure:
     """Create a gauge chart for severity visualization"""
     # Create figure and polar axis
-    fig = plt.figure(figsize=(6, 3))
-    ax = fig.add_subplot(111, projection='polar')
+    fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
     
-    # Create color gradient
-    colors = ['#4CAF50', '#FFC107', '#F44336']
-    cmap = LinearSegmentedColormap.from_list('severity', colors)
+    # Set the angle range
+    angles = np.linspace(0, np.pi, 100)
     
-    # Set up the polar plot
+    # Create the gauge
+    ax.plot(angles, np.ones_like(angles), color='lightgray', linewidth=20)
+    
+    # Add severity zones
+    ax.fill_between(angles, 0, 1, where=angles < np.pi/3, color='green', alpha=0.3)
+    ax.fill_between(angles, 0, 1, where=(angles >= np.pi/3) & (angles < 2*np.pi/3), color='orange', alpha=0.3)
+    ax.fill_between(angles, 0, 1, where=angles >= 2*np.pi/3, color='red', alpha=0.3)
+    
+    # Add severity indicator
+    severity_angle = severity_score * np.pi
+    ax.plot([severity_angle, severity_angle], [0, 1], color='black', linewidth=3)
+    
+    # Customize the plot
     ax.set_theta_zero_location('N')
     ax.set_theta_direction(-1)
-    ax.set_ylim(0, 1)
+    ax.set_yticklabels([])
+    ax.set_xticklabels(['Minor', '', 'Moderate', '', 'Severe'])
     
-    # Draw gauge
-    theta = np.linspace(0, np.pi, 100)
-    r = np.ones(100)
-    ax.plot(theta, r, color='black', linewidth=2)
-    
-    # Fill based on severity (ensure score is between 0 and 1)
-    severity_score = max(0.0, min(1.0, severity_score))
-    severity_theta = severity_score * np.pi
-    theta_fill = np.linspace(0, severity_theta, 100)
-    r_fill = np.ones(100)
-    ax.fill_between(theta_fill, 0, r_fill, color=cmap(severity_score))
-    
-    # Add labels
-    ax.set_xticks([0, np.pi/2, np.pi])
-    ax.set_xticklabels(['Low', 'Medium', 'High'])
-    ax.set_title('Accident Severity', pad=20)
+    # Add title
+    plt.title('Accident Severity Level', pad=20)
     
     return fig
 
