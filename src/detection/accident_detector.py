@@ -14,6 +14,14 @@ class AccidentDetector:
         self.image_model_path = os.path.join(os.path.dirname(__file__), "../../models/image_model.h5")
         self.image_model = self._load_image_model()
         
+        # Vehicle classes
+        self.vehicle_classes = {
+            2: "car",
+            3: "motorcycle",
+            5: "bus",
+            7: "truck"
+        }
+        
     def _load_image_model(self):
         """Load your existing image model"""
         import tensorflow as tf
@@ -45,6 +53,44 @@ class AccidentDetector:
             "type": "image"
         }
     
+    def visualize_detections(self, frame, yolo_results, accident_detected=False):
+        """
+        Draw bounding boxes and labels on the frame
+        
+        Args:
+            frame: Input frame
+            yolo_results: YOLOv8 detection results
+            accident_detected: Whether an accident was detected
+            
+        Returns:
+            Annotated frame
+        """
+        annotated_frame = frame.copy()
+        
+        # Draw vehicle bounding boxes
+        for result in yolo_results:
+            for box in result.boxes:
+                cls = int(box.cls)
+                if cls in self.vehicle_classes:
+                    # Get box coordinates
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    
+                    # Draw rectangle
+                    color = (0, 0, 255) if accident_detected else (0, 255, 0)
+                    cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), color, 2)
+                    
+                    # Add label
+                    label = f"{self.vehicle_classes[cls]} {box.conf[0]:.2f}"
+                    cv2.putText(annotated_frame, label, (x1, y1-10),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+        
+        # Add accident alert if detected
+        if accident_detected:
+            cv2.putText(annotated_frame, "ACCIDENT DETECTED!", (10, 30),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
+        return annotated_frame
+    
     def process_video(self, video_path: str) -> Dict:
         """
         Process a video using both YOLOv8 and your image model
@@ -53,13 +99,14 @@ class AccidentDetector:
             video_path: Path to the video file
             
         Returns:
-            Dictionary containing detection results
+            Dictionary containing detection results and visualization frames
         """
         cap = cv2.VideoCapture(video_path)
         results = {
             "accident_detected": False,
             "type": "video",
             "frames": [],
+            "visualization_frames": [],
             "severity": None,
             "insurance_details": None
         }
@@ -82,12 +129,18 @@ class AccidentDetector:
                     img = img / 255.0
                     img = np.expand_dims(img, axis=0)
                     
-                    if self.image_model.predict(img)[0][0] > 0.5:
+                    accident_detected = self.image_model.predict(img)[0][0] > 0.5
+                    if accident_detected:
                         results["accident_detected"] = True
                         results["frames"].append({
                             "frame_number": frame_count,
                             "detections": yolo_results
                         })
+                
+                # Visualize detections
+                vis_frame = self.visualize_detections(frame, yolo_results, 
+                                                    results["accident_detected"])
+                results["visualization_frames"].append(vis_frame)
             
             frame_count += 1
             
@@ -102,10 +155,9 @@ class AccidentDetector:
     
     def _check_vehicles(self, yolo_results) -> bool:
         """Check if there are vehicles in the frame"""
-        vehicle_classes = [2, 3, 5, 7]  # car, motorcycle, bus, truck
         for result in yolo_results:
             for box in result.boxes:
-                if int(box.cls) in vehicle_classes:
+                if int(box.cls) in self.vehicle_classes:
                     return True
         return False
     
@@ -119,7 +171,7 @@ class AccidentDetector:
         for frame in frames:
             for result in frame["detections"]:
                 vehicle_count += len([box for box in result.boxes 
-                                    if int(box.cls) in [2, 3, 5, 7]])
+                                    if int(box.cls) in self.vehicle_classes])
         
         if vehicle_count <= 2:
             return "Minor"
@@ -137,7 +189,7 @@ class AccidentDetector:
         for frame in frames:
             for result in frame["detections"]:
                 vehicle_count += len([box for box in result.boxes 
-                                    if int(box.cls) in [2, 3, 5, 7]])
+                                    if int(box.cls) in self.vehicle_classes])
         
         # Simple damage estimation based on vehicle count
         base_damage = 5000  # Base damage per vehicle
