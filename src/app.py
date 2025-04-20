@@ -10,11 +10,12 @@ import asyncio
 import warnings
 import logging
 from datetime import datetime
+import time
 
-# Suppress TensorFlow warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-warnings.filterwarnings('ignore', category=UserWarning)
+# Suppress warnings
+warnings.filterwarnings('ignore')
 logging.getLogger('tensorflow').setLevel(logging.ERROR)
+logging.getLogger('torch').setLevel(logging.ERROR)
 
 # Add the project root directory to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,9 +50,14 @@ st.markdown("""
     <style>
     .main {
         padding: 2rem;
+        background-color: #f5f5f5;
     }
     .stButton>button {
         width: 100%;
+        background-color: #2196F3;
+        color: white;
+        border-radius: 5px;
+        padding: 10px 20px;
     }
     .frame-container {
         display: flex;
@@ -62,29 +68,106 @@ st.markdown("""
     .frame-item {
         flex: 0 0 calc(33.33% - 10px);
         max-width: calc(33.33% - 10px);
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     .severity-container {
         display: flex;
         justify-content: center;
         margin: 20px 0;
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .damage-container {
         margin: 20px 0;
+        background-color: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .emergency-info {
         background-color: #ffebee;
         padding: 15px;
-        border-radius: 5px;
+        border-radius: 10px;
         margin: 10px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .stats-card {
-        background-color: #f5f5f5;
+        background-color: white;
         padding: 15px;
-        border-radius: 5px;
+        border-radius: 10px;
         margin: 10px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .detection-box {
+        position: relative;
+        border: 2px solid #2196F3;
+        border-radius: 5px;
+        margin: 5px;
+        padding: 5px;
+    }
+    .detection-label {
+        position: absolute;
+        top: -20px;
+        left: 0;
+        background-color: #2196F3;
+        color: white;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+    .progress-container {
+        margin: 20px 0;
+        padding: 20px;
+        background-color: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     </style>
 """, unsafe_allow_html=True)
+
+def draw_detection_boxes(image, detections, accident_detected=False):
+    """Draw detection boxes with enhanced visualization"""
+    img = image.copy()
+    height, width = img.shape[:2]
+    
+    for box in detections.boxes:
+        # Get box coordinates
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        cls = int(box.cls)
+        conf = float(box.conf[0])
+        
+        # Draw rectangle
+        color = (0, 0, 255) if accident_detected else (0, 255, 0)
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+        
+        # Add label
+        label = f"{st.session_state.detector.vehicle_classes.get(cls, {}).get('name', 'unknown')} {conf:.2f}"
+        (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+        
+        # Draw label background
+        cv2.rectangle(img, (x1, y1 - label_height - 10), (x1 + label_width, y1), color, -1)
+        
+        # Add label text
+        cv2.putText(img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+    
+    return img
+
+def display_detection_progress():
+    """Display a progress bar for detection process"""
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for i in range(100):
+        progress_bar.progress(i + 1)
+        status_text.text(f"Processing... {i + 1}%")
+        time.sleep(0.01)
+    
+    progress_bar.empty()
+    status_text.empty()
 
 def update_stats(accident_detected, processing_time):
     """Update statistics"""
@@ -156,8 +239,12 @@ def main():
     # Display statistics in sidebar
     display_stats()
     
-    # File uploader
-    uploaded_file = st.file_uploader("Upload an image or video", type=["jpg", "jpeg", "png", "mp4", "avi"])
+    # File uploader with enhanced UI
+    uploaded_file = st.file_uploader(
+        "📁 Upload an image or video",
+        type=["jpg", "jpeg", "png", "mp4", "avi"],
+        help="Supported formats: JPG, PNG, MP4, AVI"
+    )
     
     if uploaded_file is not None:
         start_time = datetime.now()
@@ -168,20 +255,24 @@ def main():
             file_path = tmp_file.name
         
         try:
-            # Process file based on type
-            if uploaded_file.type.startswith('image'):
-                result = st.session_state.detector.process_image(file_path)
-                display_image_results(result, file_path)
-            else:
-                result = st.session_state.detector.process_video(file_path)
-                display_video_results(result, file_path)
+            # Show processing progress
+            with st.spinner('🔍 Analyzing...'):
+                display_detection_progress()
+                
+                # Process file based on type
+                if uploaded_file.type.startswith('image'):
+                    result = st.session_state.detector.process_image(file_path)
+                    display_image_results(result, file_path)
+                else:
+                    result = st.session_state.detector.process_video(file_path)
+                    display_video_results(result, file_path)
             
             # Update statistics
             processing_time = (datetime.now() - start_time).total_seconds()
             update_stats(result.get("accident_detected", False), processing_time)
             
         except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
+            st.error(f"❌ Error processing file: {str(e)}")
         finally:
             # Clean up
             os.unlink(file_path)
