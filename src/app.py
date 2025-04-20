@@ -365,38 +365,38 @@ def process_image(image_path):
             raise ValueError("Failed to read image file")
         
         # Run detection
-        detections = st.session_state.detector.yolo_model(image)
-        
-        # Check if detections is a list (YOLO v8 format)
-        if isinstance(detections, list):
-            if not detections:
-                return {
-                    'success': True,
-                    'image': image,
-                    'detected_objects': {},
-                    'accident_detected': False
-                }
-            # Get the first detection result
-            detections = detections[0]
-        
-        # Check if detections has boxes attribute
-        if not hasattr(detections, 'boxes'):
-            # If no boxes, return empty results
-            return {
-                'success': True,
-                'image': image,
-                'detected_objects': {},
-                'accident_detected': False
-            }
+        result = st.session_state.detector.process_image(image_path)
+        if "error" in result:
+            raise ValueError(result["error"])
         
         # Draw detection boxes
-        annotated_image, detected_objects = draw_detection_boxes(image, detections)
+        annotated_image = image.copy()
+        detected_objects = {}
+        
+        for box in result["detections"]:
+            cls = int(box.cls)
+            conf = float(box.conf[0])
+            vehicle_type = st.session_state.detector.vehicle_classes[cls]["name"]
+            
+            # Update detected objects count
+            detected_objects[vehicle_type] = detected_objects.get(vehicle_type, 0) + 1
+            
+            # Draw box
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            color = (0, 0, 255) if result["accident_detected"] else (0, 255, 0)
+            cv2.rectangle(annotated_image, (x1, y1), (x2, y2), color, 2)
+            
+            # Add label
+            label = f"{vehicle_type} {conf:.2f}"
+            cv2.putText(annotated_image, label, (x1, y1-10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
         
         return {
             'success': True,
             'image': annotated_image,
             'detected_objects': detected_objects,
-            'accident_detected': len(detected_objects) >= 2
+            'accident_detected': result["accident_detected"],
+            'overlap': result["overlap"]
         }
     except Exception as e:
         return {
