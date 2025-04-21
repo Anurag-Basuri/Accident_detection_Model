@@ -29,6 +29,7 @@ class ImageModel:
             self.min_confidence = 0.5
             self.min_vehicles = 2
             self.min_overlap = 0.3
+            self.min_distance = 50  # Minimum distance between vehicles for accident detection
             
             # Configure logging
             logging.basicConfig(
@@ -79,7 +80,8 @@ class ImageModel:
                     'vehicle_count': 0,
                     'severity': {'level': 'None', 'severity_score': 0.0},
                     'tracks': {},
-                    'detections': []
+                    'detections': [],
+                    'visualization': None
                 }
             
             # Get the first result
@@ -104,6 +106,9 @@ class ImageModel:
             # Calculate severity
             severity = self._calculate_severity(len(vehicle_boxes), tracks)
             
+            # Create visualization
+            visualization = self._create_visualization(img, vehicle_boxes, is_accident)
+            
             return {
                 'accident_detected': is_accident,
                 'vehicle_count': len(vehicle_boxes),
@@ -115,7 +120,8 @@ class ImageModel:
                 'detections': result.boxes,
                 'overlap': overlap,
                 'confidence': confidence,
-                'image_path': image_path
+                'image_path': image_path,
+                'visualization': visualization
             }
             
         except Exception as e:
@@ -131,14 +137,19 @@ class ImageModel:
             # Calculate overlap between vehicles
             overlap = self._calculate_overlap(boxes)
             
+            # Calculate distances between vehicles
+            distances = self._calculate_distances(boxes)
+            
             # Calculate average confidence
             confidences = [float(box.conf[0]) for box in boxes if hasattr(box, 'conf') and len(box.conf) > 0]
             avg_confidence = np.mean(confidences) if confidences else 0.0
             
             # Check for accident conditions
-            is_accident = (overlap >= self.min_overlap and 
-                         len(boxes) >= self.min_vehicles and 
-                         avg_confidence >= self.min_confidence)
+            is_accident = (
+                (overlap >= self.min_overlap or any(d < self.min_distance for d in distances)) and 
+                len(boxes) >= self.min_vehicles and 
+                avg_confidence >= self.min_confidence
+            )
             
             return is_accident, overlap, avg_confidence
             
@@ -175,6 +186,27 @@ class ImageModel:
         
         return max_overlap
     
+    def _calculate_distances(self, boxes: List) -> List[float]:
+        """Calculate distances between vehicle centers"""
+        distances = []
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                try:
+                    box1 = boxes[i].xyxy[0]
+                    box2 = boxes[j].xyxy[0]
+                    
+                    # Calculate centers
+                    center1 = ((box1[0] + box1[2]) / 2, (box1[1] + box1[3]) / 2)
+                    center2 = ((box2[0] + box2[2]) / 2, (box2[1] + box2[3]) / 2)
+                    
+                    # Calculate Euclidean distance
+                    distance = np.sqrt((center1[0] - center2[0])**2 + (center1[1] - center2[1])**2)
+                    distances.append(distance)
+                except Exception:
+                    continue
+        
+        return distances
+    
     def _calculate_severity(self, vehicle_count: int, tracks: Dict) -> float:
         """Calculate severity score based on vehicle count and types"""
         if vehicle_count < self.min_vehicles:
@@ -196,4 +228,44 @@ class ImageModel:
         
         # Calculate final severity
         severity = count_severity * type_multiplier
-        return min(severity, 1.0) 
+        return min(severity, 1.0)
+    
+    def _create_visualization(self, img: np.ndarray, boxes: List, is_accident: bool) -> np.ndarray:
+        """Create visualization of detection results"""
+        try:
+            # Create a copy of the image
+            vis_img = img.copy()
+            
+            # Define colors
+            accident_color = (0, 0, 255)  # Red for accidents
+            normal_color = (0, 255, 0)    # Green for normal detection
+            
+            # Draw bounding boxes
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                color = accident_color if is_accident else normal_color
+                cv2.rectangle(vis_img, (x1, y1), (x2, y2), color, 2)
+                
+                # Add class label and confidence
+                class_id = int(box.cls[0])
+                class_name = self.vehicle_classes.get(class_id, 'unknown')
+                confidence = float(box.conf[0])
+                label = f"{class_name} {confidence:.2f}"
+                
+                # Draw label background
+                (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                cv2.rectangle(vis_img, (x1, y1 - label_height - 10), (x1 + label_width, y1), color, -1)
+                
+                # Draw label text
+                cv2.putText(vis_img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            
+            # Add accident status
+            status = "ACCIDENT DETECTED!" if is_accident else "No Accident"
+            status_color = accident_color if is_accident else normal_color
+            cv2.putText(vis_img, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, status_color, 2)
+            
+            return vis_img
+            
+        except Exception as e:
+            self.logger.error(f"Error creating visualization: {str(e)}")
+            return img 
