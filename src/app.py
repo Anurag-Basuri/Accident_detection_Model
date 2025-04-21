@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 from typing import Dict, List, Any
-from detection.accident_detector import AccidentDetector
+from detection.yolo_detector import YOLODetector
 from utils.visualization import (
     create_severity_gauge,
     create_damage_bar_chart,
@@ -32,7 +32,7 @@ if os.name == 'nt':
 
 # Initialize session state
 if 'detector' not in st.session_state:
-    st.session_state.detector = AccidentDetector()
+    st.session_state.detector = YOLODetector()
 if 'detection_history' not in st.session_state:
     st.session_state.detection_history = []
 if 'stats' not in st.session_state:
@@ -153,7 +153,7 @@ def process_image(image_file) -> Dict:
         pass
 
 def process_video(video_file) -> Dict:
-    """Process an uploaded video with improved detection"""
+    """Process an uploaded video"""
     temp_path = None
     try:
         # Save uploaded file to temporary location
@@ -161,66 +161,10 @@ def process_video(video_file) -> Dict:
             tmp_file.write(video_file.getvalue())
             temp_path = tmp_file.name
         
-        # Initialize video capture
-        cap = cv2.VideoCapture(temp_path)
-        if not cap.isOpened():
-            raise ValueError("Could not open video file")
+        # Process video
+        result = st.session_state.detector.process_video(temp_path)
         
-        # Get video properties
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = frame_count / fps
-        
-        # Initialize progress bar
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Process video frames
-        results = []
-        frame_skip = max(1, int(fps / 5))  # Process 5 frames per second
-        
-        for frame_idx in range(0, frame_count, frame_skip):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Process frame
-            result = st.session_state.detector.process_frame(frame)
-            results.append(result)
-            
-            # Update progress
-            progress = frame_idx / frame_count
-            progress_bar.progress(progress)
-            status_text.text(f"Processing frame {frame_idx}/{frame_count}")
-        
-        # Release video capture
-        cap.release()
-        
-        # Aggregate results
-        if results:
-            # Calculate average severity
-            severity_scores = [r.get('severity', {}).get('severity_score', 0) for r in results]
-            avg_severity = np.mean(severity_scores)
-            
-            # Determine if accident occurred
-            accident_detected = any(r.get('accident_detected', False) for r in results)
-            
-            # Get vehicle counts
-            vehicle_counts = [r.get('vehicle_count', 0) for r in results]
-            
-            return {
-                'accident_detected': accident_detected,
-                'severity': {
-                    'severity_score': avg_severity,
-                    'level': 'Minor' if avg_severity < 0.3 else 'Moderate' if avg_severity < 0.7 else 'Severe'
-                },
-                'vehicle_count': int(np.mean(vehicle_counts)),
-                'duration': duration,
-                'frame_results': results
-            }
-        
-        return {"accident_detected": False, "error": "No frames processed"}
+        return result
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -445,7 +389,7 @@ def main():
         """)
         
         st.header("⚙️ Settings")
-        confidence_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.6, 0.05)
+        confidence_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.05)
         if 'detector' in st.session_state:
             st.session_state.detector.min_confidence = confidence_threshold
     
