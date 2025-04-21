@@ -6,43 +6,44 @@ import streamlit as st
 import seaborn as sns
 
 def create_severity_gauge(severity_score: float) -> plt.Figure:
-    """Create a gauge chart for severity visualization"""
-    fig, ax = plt.subplots(figsize=(6, 4), subplot_kw={'projection': 'polar'})
+    """Create a severity gauge visualization"""
+    fig, ax = plt.subplots(figsize=(8, 4), subplot_kw={'projection': 'polar'})
     
-    # Define angles and colors
-    angles = np.linspace(0, np.pi, 100)
-    colors = ['#4CAF50', '#FF9800', '#F44336']
-    thresholds = [0.3, 0.7, 1.0]
+    # Define severity levels and colors
+    severity_levels = {
+        'Minor': {'min': 0, 'max': 0.3, 'color': '#4CAF50'},
+        'Moderate': {'min': 0.3, 'max': 0.7, 'color': '#FF9800'},
+        'Severe': {'min': 0.7, 'max': 1.0, 'color': '#F44336'}
+    }
     
     # Create gauge background
-    for i in range(len(thresholds)):
-        if i == 0:
-            start = 0
-        else:
-            start = thresholds[i-1]
-        end = thresholds[i]
-        angle_range = np.linspace(start * np.pi, end * np.pi, 100)
-        ax.fill_between(angle_range, 0, 1, color=colors[i], alpha=0.5)
+    for level, params in severity_levels.items():
+        theta = np.linspace(params['min'] * np.pi, params['max'] * np.pi, 100)
+        r = np.ones_like(theta)
+        ax.fill_between(theta, 0, r, color=params['color'], alpha=0.3)
+        ax.plot(theta, r, color=params['color'], linewidth=2)
+        
+        # Add level labels
+        mid_angle = (params['min'] + params['max']) * np.pi / 2
+        ax.text(mid_angle, 1.1, level, ha='center', va='center', fontsize=12)
     
     # Add needle
-    severity_angle = severity_score * np.pi
-    ax.plot([severity_angle, severity_angle], [0, 1], color='black', linewidth=2)
+    needle_angle = severity_score * np.pi
+    ax.plot([needle_angle, needle_angle], [0, 1], color='black', linewidth=3)
+    ax.plot(needle_angle, 1, 'o', color='black', markersize=10)
     
-    # Add labels
+    # Add severity score text
+    ax.text(0, 0.5, f'{severity_score:.2f}', ha='center', va='center', fontsize=24)
+    
+    # Customize appearance
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(-1)
+    ax.set_ylim(0, 1.2)
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title('Severity Score', pad=20)
+    ax.spines['polar'].set_visible(False)
     
-    # Add severity level text
-    if severity_score < 0.3:
-        level = "Minor"
-    elif severity_score < 0.7:
-        level = "Moderate"
-    else:
-        level = "Severe"
-    
-    ax.text(0, 1.1, f"{level}", ha='center', va='center', fontsize=12)
-    
+    plt.tight_layout()
     return fig
 
 def create_damage_bar_chart(damage_details: Dict) -> plt.Figure:

@@ -102,6 +102,20 @@ st.markdown("""
         margin: 0.5rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
+    .video-summary {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+    .severity-badge {
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        text-align: center;
+        font-weight: bold;
+        margin-top: 1rem;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -139,7 +153,7 @@ def process_image(image_file) -> Dict:
         pass
 
 def process_video(video_file) -> Dict:
-    """Process an uploaded video"""
+    """Process an uploaded video with improved detection"""
     temp_path = None
     try:
         # Save uploaded file to temporary location
@@ -147,10 +161,66 @@ def process_video(video_file) -> Dict:
             tmp_file.write(video_file.getvalue())
             temp_path = tmp_file.name
         
-        # Process video
-        result = st.session_state.detector.process_video(temp_path)
+        # Initialize video capture
+        cap = cv2.VideoCapture(temp_path)
+        if not cap.isOpened():
+            raise ValueError("Could not open video file")
         
-        return result
+        # Get video properties
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = frame_count / fps
+        
+        # Initialize progress bar
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Process video frames
+        results = []
+        frame_skip = max(1, int(fps / 5))  # Process 5 frames per second
+        
+        for frame_idx in range(0, frame_count, frame_skip):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Process frame
+            result = st.session_state.detector.process_frame(frame)
+            results.append(result)
+            
+            # Update progress
+            progress = frame_idx / frame_count
+            progress_bar.progress(progress)
+            status_text.text(f"Processing frame {frame_idx}/{frame_count}")
+        
+        # Release video capture
+        cap.release()
+        
+        # Aggregate results
+        if results:
+            # Calculate average severity
+            severity_scores = [r.get('severity', {}).get('severity_score', 0) for r in results]
+            avg_severity = np.mean(severity_scores)
+            
+            # Determine if accident occurred
+            accident_detected = any(r.get('accident_detected', False) for r in results)
+            
+            # Get vehicle counts
+            vehicle_counts = [r.get('vehicle_count', 0) for r in results]
+            
+            return {
+                'accident_detected': accident_detected,
+                'severity': {
+                    'severity_score': avg_severity,
+                    'level': 'Minor' if avg_severity < 0.3 else 'Moderate' if avg_severity < 0.7 else 'Severe'
+                },
+                'vehicle_count': int(np.mean(vehicle_counts)),
+                'duration': duration,
+                'frame_results': results
+            }
+        
+        return {"accident_detected": False, "error": "No frames processed"}
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -281,82 +351,57 @@ def display_detection_results(result: Dict, file_type: str):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Display detection boxes
-        if file_type == "image" and "detections" in result:
-            try:
-                if "image_path" in result:
-                    img = cv2.imread(result["image_path"])
-                    if img is not None:
-                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        
-                        # Draw detection boxes
-                        annotated_img, detected_objects = draw_detection_boxes(
-                            img_rgb, result["detections"], result["accident_detected"])
-                        
-                        # Display annotated image
-                        st.image(annotated_img, caption="Detection Results", use_column_width=True)
-                        
-                        # Clean up temporary file
-                        if os.path.exists(result["image_path"]):
-                            os.remove(result["image_path"])
-            except Exception as e:
-                st.error(f"Error displaying image: {str(e)}")
+        st.markdown("### 🎥 Detection Results")
+        
+        if file_type == "video" and "frame_results" in result:
+            # Display video summary
+            st.markdown(f"""
+                <div class='video-summary'>
+                    <p><strong>Duration:</strong> {result['duration']:.1f} seconds</p>
+                    <p><strong>Frames Analyzed:</strong> {len(result['frame_results'])}</p>
+                    <p><strong>Average Vehicles:</strong> {result['vehicle_count']}</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Display frame-by-frame analysis
+            st.markdown("#### 📊 Frame Analysis")
+            frame_data = []
+            for i, frame_result in enumerate(result['frame_results']):
+                if 'severity' in frame_result:
+                    frame_data.append({
+                        'Frame': i,
+                        'Severity': frame_result['severity']['severity_score'],
+                        'Vehicles': frame_result.get('vehicle_count', 0)
+                    })
+            
+            if frame_data:
+                df = pd.DataFrame(frame_data)
+                fig = px.line(df, x='Frame', y=['Severity', 'Vehicles'],
+                            title='Frame-by-Frame Analysis',
+                            labels={'value': 'Score/Count', 'variable': 'Metric'})
+                st.plotly_chart(fig, use_container_width=True)
     
     with col2:
         # Display severity information
         if "severity" in result:
             severity = result["severity"]
-            st.markdown(f"<div class='severity-indicator severity-{severity['level'].lower()}'>"
-                       f"Severity Level: {severity['level']}</div>", unsafe_allow_html=True)
+            st.markdown("### ⚠️ Severity Assessment")
             
-            # Create and display severity gauge
+            # Create severity gauge
             fig = create_severity_gauge(severity["severity_score"])
             st.pyplot(fig)
             
-            # Display vehicle count
-            st.markdown(f"**Vehicles Detected:** {result.get('vehicle_count', 0)}")
-            
-            # Display overlap information
-            if "overlap" in result:
-                st.markdown(f"**Overlap Score:** {result['overlap']:.2f}")
-    
-    # Display additional information
-    st.markdown("### 📋 Detection Details")
-    
-    # Create columns for details
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        # Display object summary
-        if "detections" in result:
-            st.markdown("#### Detected Objects")
-            for obj_type, count in detected_objects.items():
-                st.markdown(f"- **{obj_type}:** {count}")
-    
-    with col4:
-        # Display impact visualization
-        if "overlap" in result and "detections" in result:
-            try:
-                vehicle_types = [st.session_state.detector.vehicle_classes[int(box.cls)] 
-                               for box in result["detections"]]
-                fig = create_impact_visualization(result["overlap"], vehicle_types)
-                st.pyplot(fig)
-            except Exception as e:
-                st.error(f"Error creating impact visualization: {str(e)}")
-    
-    # Display damage assessment
-    if "severity" in result and "detections" in result:
-        try:
-            vehicle_types = [st.session_state.detector.vehicle_classes[int(box.cls)] 
-                           for box in result["detections"]]
-            damage_details = {
-                vehicle_type: {"total_damage": result["severity"]["severity_score"] * 10000}
-                for vehicle_type in set(vehicle_types)
+            # Display severity level with color-coded badge
+            severity_color = {
+                'Minor': '#4CAF50',
+                'Moderate': '#FF9800',
+                'Severe': '#F44336'
             }
-            fig = create_damage_bar_chart(damage_details)
-            st.pyplot(fig)
-        except Exception as e:
-            st.error(f"Error creating damage assessment: {str(e)}")
+            st.markdown(f"""
+                <div class='severity-badge' style='background-color: {severity_color[severity['level']]};'>
+                    {severity['level']} Severity
+                </div>
+            """, unsafe_allow_html=True)
 
 def main():
     """Main application function"""
