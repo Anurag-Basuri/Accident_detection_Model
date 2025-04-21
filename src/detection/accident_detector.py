@@ -424,37 +424,78 @@ class AccidentDetector:
     
     def _calculate_severity(self, boxes: List, overlap: float) -> Dict:
         """Calculate severity of potential accident"""
-        # Base severity on number of vehicles and overlap
-        vehicle_count = len(boxes)
-        severity_score = min(1.0, (vehicle_count / 4) * 0.5 + overlap * 0.5)
-        
-        # Adjust severity based on vehicle types
-        vehicle_types = [self.vehicle_classes[int(box.cls)] for box in boxes]
-        if "truck" in vehicle_types or "bus" in vehicle_types:
-            severity_score = min(1.0, severity_score + 0.2)
-        
-        # Adjust severity based on velocities
-        if hasattr(boxes[0], 'id') and boxes[0].id in self.track_history:
-            velocities = [self._calculate_velocity(box.id) for box in boxes 
-                        if hasattr(box, 'id') and box.id in self.track_history]
-            if velocities:
-                speed = np.mean([np.sqrt(vx**2 + vy**2) for vx, vy in velocities])
-                severity_score = min(1.0, severity_score + speed / 100)
-        
-        # Determine severity level
-        if severity_score < 0.3:
-            level = "Minor"
-        elif severity_score < 0.7:
-            level = "Moderate"
-        else:
-            level = "Severe"
-        
-        return {
-            "level": level,
-            "severity_score": severity_score,
-            "vehicle_count": vehicle_count,
-            "overlap": overlap
-        }
+        try:
+            if not boxes:
+                return {
+                    "level": "None",
+                    "severity_score": 0.0,
+                    "vehicle_count": 0,
+                    "overlap": 0.0
+                }
+            
+            # Base severity on number of vehicles and overlap
+            vehicle_count = len(boxes)
+            severity_score = min(1.0, (vehicle_count / 4) * 0.5 + overlap * 0.5)
+            
+            # Adjust severity based on vehicle types
+            vehicle_types = []
+            for box in boxes:
+                try:
+                    if hasattr(box, 'cls') and len(box.cls) > 0:
+                        cls = int(box.cls[0])
+                        if cls in self.vehicle_classes:
+                            vehicle_types.append(self.vehicle_classes[cls])
+                except (IndexError, ValueError, AttributeError):
+                    continue
+            
+            # Adjust severity based on vehicle types
+            if "truck" in vehicle_types or "bus" in vehicle_types:
+                severity_score = min(1.0, severity_score + 0.2)
+            
+            # Adjust severity based on velocities if tracking data is available
+            if hasattr(boxes[0], 'id') and boxes[0].id in self.track_history:
+                velocities = []
+                for box in boxes:
+                    try:
+                        if hasattr(box, 'id') and box.id in self.track_history:
+                            velocity = self._calculate_velocity(box.id)
+                            if velocity is not None:
+                                velocities.append(velocity)
+                    except Exception:
+                        continue
+                
+                if velocities:
+                    try:
+                        speed = np.mean([np.sqrt(vx**2 + vy**2) for vx, vy in velocities])
+                        severity_score = min(1.0, severity_score + speed / 100)
+                    except Exception:
+                        pass
+            
+            # Determine severity level
+            if severity_score < 0.3:
+                level = "Minor"
+            elif severity_score < 0.7:
+                level = "Moderate"
+            else:
+                level = "Severe"
+            
+            return {
+                "level": level,
+                "severity_score": severity_score,
+                "vehicle_count": vehicle_count,
+                "overlap": overlap,
+                "vehicle_types": vehicle_types
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in _calculate_severity: {str(e)}")
+            return {
+                "level": "Unknown",
+                "severity_score": 0.0,
+                "vehicle_count": 0,
+                "overlap": 0.0,
+                "vehicle_types": []
+            }
     
     def _calculate_overall_severity(self, accident_frames: List) -> Dict:
         """Calculate overall severity from multiple frames"""
