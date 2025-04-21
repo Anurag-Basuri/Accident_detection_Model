@@ -16,13 +16,23 @@ class VideoDetector:
             self.yolo_model = YOLO('yolov8n.pt')
             
             # Load custom accident detection model
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            project_root = os.path.dirname(os.path.dirname(current_dir))
+            # Get the absolute path of the current file
+            current_file = os.path.abspath(__file__)
+            # Get the project root directory (two levels up from current file)
+            project_root = os.path.dirname(os.path.dirname(current_file))
+            # Construct the path to the model file
             model_path = os.path.join(project_root, 'models', 'image_model.h5')
             
+            # Verify the model file exists
             if not os.path.exists(model_path):
-                raise FileNotFoundError(f"Model file not found at {model_path}")
+                raise FileNotFoundError(
+                    f"Model file not found at {model_path}\n"
+                    f"Current file: {current_file}\n"
+                    f"Project root: {project_root}\n"
+                    f"Please ensure the model file exists in the correct location."
+                )
             
+            self.logger.info(f"Loading model from: {model_path}")
             self.accident_model = tf.keras.models.load_model(model_path)
             
             # Define vehicle classes
