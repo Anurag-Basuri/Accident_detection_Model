@@ -357,20 +357,20 @@ def display_detection_results(result: Dict, file_type: str):
             # Display video summary
             st.markdown(f"""
                 <div class='video-summary'>
-                    <p><strong>Duration:</strong> {result['duration']:.1f} seconds</p>
-                    <p><strong>Frames Analyzed:</strong> {len(result['frame_results'])}</p>
-                    <p><strong>Average Vehicles:</strong> {result['vehicle_count']}</p>
+                    <p><strong>Duration:</strong> {result.get('duration', 0):.1f} seconds</p>
+                    <p><strong>Frames Analyzed:</strong> {len(result.get('frame_results', []))}</p>
+                    <p><strong>Average Vehicles:</strong> {result.get('vehicle_count', 0)}</p>
                 </div>
             """, unsafe_allow_html=True)
             
             # Display frame-by-frame analysis
             st.markdown("#### 📊 Frame Analysis")
             frame_data = []
-            for i, frame_result in enumerate(result['frame_results']):
+            for i, frame_result in enumerate(result.get('frame_results', [])):
                 if 'severity' in frame_result:
                     frame_data.append({
                         'Frame': i,
-                        'Severity': frame_result['severity']['severity_score'],
+                        'Severity': frame_result['severity'].get('severity_score', 0),
                         'Vehicles': frame_result.get('vehicle_count', 0)
                     })
             
@@ -383,25 +383,49 @@ def display_detection_results(result: Dict, file_type: str):
     
     with col2:
         # Display severity information
-        if "severity" in result:
-            severity = result["severity"]
+        severity = result.get('severity', {})
+        if severity:
             st.markdown("### ⚠️ Severity Assessment")
             
             # Create severity gauge
-            fig = create_severity_gauge(severity["severity_score"])
+            severity_score = severity.get('severity_score', 0)
+            fig = create_severity_gauge(severity_score)
             st.pyplot(fig)
             
             # Display severity level with color-coded badge
+            severity_level = severity.get('level', 'None')
             severity_color = {
                 'Minor': '#4CAF50',
                 'Moderate': '#FF9800',
-                'Severe': '#F44336'
+                'Severe': '#F44336',
+                'None': '#9E9E9E'
             }
+            
             st.markdown(f"""
-                <div class='severity-badge' style='background-color: {severity_color[severity['level']]};'>
-                    {severity['level']} Severity
+                <div class='severity-badge' style='background-color: {severity_color.get(severity_level, '#9E9E9E')};'>
+                    {severity_level} Severity
                 </div>
             """, unsafe_allow_html=True)
+    
+    # Add custom CSS for new components
+    st.markdown("""
+        <style>
+        .video-summary {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .severity-badge {
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            text-align: center;
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 def main():
     """Main application function"""
