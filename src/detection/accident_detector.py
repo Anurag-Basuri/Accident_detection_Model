@@ -9,7 +9,37 @@ import tempfile
 import shutil
 import logging
 from .tracker import ObjectTracker
-from utils.image_utils import predict_image
+import tensorflow as tf
+
+def predict_image(image_path):
+    """Predicts if an image contains an accident
+    
+    Args:
+        image_path: Path to the image file
+        
+    Returns:
+        bool: True if accident detected, False otherwise
+    """
+    # Load and preprocess image
+    img = cv2.imread(image_path)
+    img = cv2.resize(img, (224, 224))
+    img = img / 255.0
+    img = np.expand_dims(img, axis=0)
+    
+    # Load model
+    model_path = os.path.join(os.path.dirname(__file__), "../models/image_model.h5")
+    model = tf.keras.models.load_model(model_path)
+    
+    # Make prediction
+    prediction = model.predict(img)
+    return prediction[0][0] > 0.4
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class AccidentDetector:
     def __init__(self):
