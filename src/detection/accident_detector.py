@@ -78,45 +78,79 @@ class AccidentDetector:
             )
             
             # Process detection results
-            if isinstance(results, list):
-                if not results:
-                    return {"accident_detected": False, "detections": []}
-                results = results[0]
+            if not results or not isinstance(results, list):
+                return {"accident_detected": False, "detections": [], "error": "No detections found"}
             
-            # Get vehicle detections with additional filtering
+            # Get the first result if available
+            if len(results) > 0:
+                results = results[0]
+            else:
+                return {"accident_detected": False, "detections": [], "error": "No detections found"}
+            
+            # Initialize empty detections list
             vehicle_boxes = []
-            for box in results.boxes:
-                cls = int(box.cls)
-                if cls in self.vehicle_classes:
-                    # Check vehicle size
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    width = x2 - x1
-                    height = y2 - y1
-                    if width >= self.min_vehicle_size or height >= self.min_vehicle_size:
-                        vehicle_boxes.append(box)
+            
+            # Safely get boxes if they exist
+            if hasattr(results, 'boxes') and results.boxes is not None:
+                for box in results.boxes:
+                    try:
+                        # Check if box has required attributes
+                        if not hasattr(box, 'cls') or not hasattr(box, 'xyxy'):
+                            continue
+                            
+                        cls = int(box.cls[0]) if len(box.cls) > 0 else None
+                        if cls is None or cls not in self.vehicle_classes:
+                            continue
+                            
+                        # Safely get coordinates
+                        if len(box.xyxy) > 0 and len(box.xyxy[0]) >= 4:
+                            x1, y1, x2, y2 = map(int, box.xyxy[0][:4])
+                            width = x2 - x1
+                            height = y2 - y1
+                            
+                            # Check vehicle size
+                            if width >= self.min_vehicle_size or height >= self.min_vehicle_size:
+                                vehicle_boxes.append(box)
+                    except (IndexError, ValueError, AttributeError) as e:
+                        logging.warning(f"Error processing box: {str(e)}")
+                        continue
             
             # Check for potential accident
             is_accident = False
             overlap = 0.0
+            
             if len(vehicle_boxes) >= self.min_vehicles:
-                # Calculate overlap between vehicles
-                overlap = self._calculate_overlap(vehicle_boxes)
-                
-                # Check for high confidence detections
-                high_confidence_vehicles = sum(1 for box in vehicle_boxes 
-                                            if float(box.conf[0]) >= self.min_confidence_for_accident)
-                
-                # Additional checks for accident detection
-                if (overlap >= self.min_overlap and 
-                    high_confidence_vehicles >= 2 and 
-                    self._check_vehicle_positions(vehicle_boxes)):
-                    is_accident = True
+                try:
+                    # Calculate overlap between vehicles
+                    overlap = self._calculate_overlap(vehicle_boxes)
+                    
+                    # Check for high confidence detections
+                    high_confidence_vehicles = sum(1 for box in vehicle_boxes 
+                                                if hasattr(box, 'conf') and 
+                                                len(box.conf) > 0 and 
+                                                float(box.conf[0]) >= self.min_confidence_for_accident)
+                    
+                    # Additional checks for accident detection
+                    if (overlap >= self.min_overlap and 
+                        high_confidence_vehicles >= 2 and 
+                        self._check_vehicle_positions(vehicle_boxes)):
+                        is_accident = True
+                except Exception as e:
+                    logging.error(f"Error in accident detection: {str(e)}")
+                    is_accident = False
             
             # Calculate severity
-            severity = self._calculate_severity(vehicle_boxes, overlap)
+            try:
+                severity = self._calculate_severity(vehicle_boxes, overlap)
+            except Exception as e:
+                logging.error(f"Error calculating severity: {str(e)}")
+                severity = {"level": "Unknown", "severity_score": 0.0}
             
             # Update tracking history
-            self._update_tracking(vehicle_boxes)
+            try:
+                self._update_tracking(vehicle_boxes)
+            except Exception as e:
+                logging.error(f"Error updating tracking: {str(e)}")
             
             # Prepare result
             result = {
@@ -131,6 +165,7 @@ class AccidentDetector:
             return result
             
         except Exception as e:
+            logging.error(f"Error in process_image: {str(e)}")
             return {"accident_detected": False, "error": str(e)}
     
     def process_video(self, video_path: str) -> Dict:
