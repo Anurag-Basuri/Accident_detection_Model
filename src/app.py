@@ -12,7 +12,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 from typing import Dict, List, Any
-from detection.yolo_detector import YOLODetector
+from detection.image_model import ImageModel
 from utils.visualization import (
     create_severity_gauge,
     create_damage_bar_chart,
@@ -31,8 +31,8 @@ if os.name == 'nt':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Initialize session state
-if 'detector' not in st.session_state:
-    st.session_state.detector = YOLODetector()
+if 'model' not in st.session_state:
+    st.session_state.model = ImageModel()
 if 'detection_history' not in st.session_state:
     st.session_state.detection_history = []
 if 'stats' not in st.session_state:
@@ -116,6 +116,25 @@ st.markdown("""
         font-weight: bold;
         margin-top: 1rem;
     }
+    .detection-result {
+        background-color: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .vehicle-info {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+    .vehicle-card {
+        background-color: #f8f9fa;
+        border-radius: 5px;
+        padding: 0.5rem 1rem;
+        min-width: 120px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -137,10 +156,7 @@ def process_image(image_file) -> Dict:
             temp_path = tmp_file.name
         
         # Process image
-        result = st.session_state.detector.process_image(temp_path)
-        
-        # Add image path to result
-        result["image_path"] = temp_path
+        result = st.session_state.model.process_image(temp_path)
         
         return result
         
@@ -148,9 +164,12 @@ def process_image(image_file) -> Dict:
         st.error(f"Error processing image: {str(e)}")
         return {"accident_detected": False, "error": str(e)}
     finally:
-        # Note: We don't delete the temp file here as it's needed for display
-        # It will be cleaned up after display_detection_results is done
-        pass
+        # Clean up temporary file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception as e:
+                logging.error(f"Error cleaning up temporary file: {str(e)}")
 
 def process_video(video_file) -> Dict:
     """Process an uploaded video"""
@@ -198,10 +217,73 @@ def update_statistics(result: Dict):
     st.session_state.stats['detection_times'].append(current_time)
     
     # Update vehicle types
-    if 'vehicle_types' in result:
-        for vehicle_type, count in result['vehicle_types'].items():
+    if 'tracks' in result:
+        for track in result['tracks'].values():
+            vehicle_type = track['class']
             st.session_state.stats['vehicle_types'][vehicle_type] = \
-                st.session_state.stats['vehicle_types'].get(vehicle_type, 0) + count
+                st.session_state.stats['vehicle_types'].get(vehicle_type, 0) + 1
+
+def display_detection_results(result: Dict):
+    """Display detection results with enhanced visualization"""
+    if "error" in result:
+        st.error(result["error"])
+        return
+    
+    # Create columns for main content
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("### 🎥 Detection Results")
+        
+        # Display detection box
+        st.markdown('<div class="detection-result">', unsafe_allow_html=True)
+        
+        # Display accident status
+        if result.get('accident_detected', False):
+            st.markdown('<div class="emergency-info">⚠️ <strong>Accident Detected!</strong></div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="detection-box">✅ No Accident Detected</div>', unsafe_allow_html=True)
+        
+        # Display vehicle information
+        if 'tracks' in result and result['tracks']:
+            st.markdown("#### 🚗 Detected Vehicles")
+            st.markdown('<div class="vehicle-info">', unsafe_allow_html=True)
+            for track_id, track in result['tracks'].items():
+                st.markdown(f"""
+                    <div class="vehicle-card">
+                        <strong>{track['class'].title()}</strong><br>
+                        Confidence: {track['confidence']:.2f}
+                    </div>
+                """, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    with col2:
+        # Display severity information
+        severity = result.get('severity', {})
+        if severity:
+            st.markdown("### ⚠️ Severity Assessment")
+            
+            # Create severity gauge
+            severity_score = severity.get('severity_score', 0)
+            fig = create_severity_gauge(severity_score)
+            st.pyplot(fig)
+            
+            # Display severity level with color-coded badge
+            severity_level = severity.get('level', 'None')
+            severity_color = {
+                'Minor': '#4CAF50',
+                'Moderate': '#FF9800',
+                'Severe': '#F44336',
+                'None': '#9E9E9E'
+            }
+            
+            st.markdown(f"""
+                <div class='severity-badge' style='background-color: {severity_color.get(severity_level, '#9E9E9E')};'>
+                    {severity_level} Severity
+                </div>
+            """, unsafe_allow_html=True)
 
 def display_statistics():
     """Display comprehensive statistics"""
@@ -281,105 +363,14 @@ def display_statistics():
             fig = px.histogram(df, x='Severity Score', title='Severity Score Distribution')
             st.plotly_chart(fig, use_container_width=True)
 
-def display_detection_results(result: Dict, file_type: str):
-    """Display detection results with enhanced visualization"""
-    if "error" in result:
-        st.error(result["error"])
-        return
-    
-    # Create columns for main content
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("### 🎥 Detection Results")
-        
-        if file_type == "video" and "frame_results" in result:
-            # Display video summary
-            st.markdown(f"""
-                <div class='video-summary'>
-                    <p><strong>Duration:</strong> {result.get('duration', 0):.1f} seconds</p>
-                    <p><strong>Frames Analyzed:</strong> {len(result.get('frame_results', []))}</p>
-                    <p><strong>Average Vehicles:</strong> {result.get('vehicle_count', 0)}</p>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # Display frame-by-frame analysis
-            st.markdown("#### 📊 Frame Analysis")
-            frame_data = []
-            for i, frame_result in enumerate(result.get('frame_results', [])):
-                if 'severity' in frame_result:
-                    frame_data.append({
-                        'Frame': i,
-                        'Severity': frame_result['severity'].get('severity_score', 0),
-                        'Vehicles': frame_result.get('vehicle_count', 0)
-                    })
-            
-            if frame_data:
-                df = pd.DataFrame(frame_data)
-                fig = px.line(df, x='Frame', y=['Severity', 'Vehicles'],
-                            title='Frame-by-Frame Analysis',
-                            labels={'value': 'Score/Count', 'variable': 'Metric'})
-                st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        # Display severity information
-        severity = result.get('severity', {})
-        if severity:
-            st.markdown("### ⚠️ Severity Assessment")
-            
-            # Create severity gauge
-            severity_score = severity.get('severity_score', 0)
-            fig = create_severity_gauge(severity_score)
-            st.pyplot(fig)
-            
-            # Display severity level with color-coded badge
-            severity_level = severity.get('level', 'None')
-            severity_color = {
-                'Minor': '#4CAF50',
-                'Moderate': '#FF9800',
-                'Severe': '#F44336',
-                'None': '#9E9E9E'
-            }
-            
-            st.markdown(f"""
-                <div class='severity-badge' style='background-color: {severity_color.get(severity_level, '#9E9E9E')};'>
-                    {severity_level} Severity
-                </div>
-            """, unsafe_allow_html=True)
-    
-    # Add custom CSS for new components
-    st.markdown("""
-        <style>
-        .video-summary {
-            background-color: #f8f9fa;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
-        .severity-badge {
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            text-align: center;
-            font-weight: bold;
-            margin-top: 1rem;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
 def main():
     """Main application function"""
     st.title("🚗 AI-Powered Accident Detection System")
     
     # Sidebar
     with st.sidebar:
-        st.header("📤 Upload Media")
-        file_type = st.radio("Select file type:", ["Image", "Video"])
-        
-        if file_type == "Image":
-            uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-        else:
-            uploaded_file = st.file_uploader("Upload a video", type=["mp4", "avi", "mov"])
+        st.header("📤 Upload Image")
+        uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
         
         st.header("🆘 Emergency Contacts")
         st.markdown("""
@@ -390,8 +381,8 @@ def main():
         
         st.header("⚙️ Settings")
         confidence_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.05)
-        if 'detector' in st.session_state:
-            st.session_state.detector.min_confidence = confidence_threshold
+        if 'model' in st.session_state:
+            st.session_state.model.min_confidence = confidence_threshold
     
     # Main content
     if uploaded_file is not None:
@@ -405,13 +396,10 @@ def main():
         
         # Process file
         with st.spinner("Processing..."):
-            if file_type == "Image":
-                result = process_image(uploaded_file)
-            else:
-                result = process_video(uploaded_file)
+            result = process_image(uploaded_file)
         
         # Display results
-        display_detection_results(result, file_type.lower())
+        display_detection_results(result)
         
         # Update statistics
         update_statistics(result)
