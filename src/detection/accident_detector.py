@@ -275,7 +275,7 @@ class AccidentDetector:
         return min_distance < 100 and is_converging
     
     def _check_motion(self, current_frame: np.ndarray) -> bool:
-        """Check for significant motion in the scene"""
+        """Check for significant motion in the scene using frame differencing"""
         if self.prev_frame is None:
             self.prev_frame = current_frame
             return False
@@ -289,26 +289,29 @@ class AccidentDetector:
             prev_gray = cv2.cvtColor(self.prev_frame, cv2.COLOR_RGB2GRAY)
             current_gray = cv2.cvtColor(current_frame, cv2.COLOR_RGB2GRAY)
             
-            # Calculate optical flow with proper parameters
-            flow = cv2.calcOpticalFlowFarneback(
-                prev_gray, current_gray, None,
-                pyr_scale=0.5,  # Pyramid scale
-                levels=3,       # Number of pyramid layers
-                winsize=15,     # Window size
-                iterations=3,   # Number of iterations
-                poly_n=5,       # Size of pixel neighborhood
-                poly_sigma=1.2, # Standard deviation of Gaussian
-                flags=0
-            )
+            # Apply Gaussian blur to reduce noise
+            prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
+            current_gray = cv2.GaussianBlur(current_gray, (21, 21), 0)
             
-            # Calculate motion magnitude
-            magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
-            mean_magnitude = np.mean(magnitude)
+            # Calculate absolute difference between frames
+            frame_diff = cv2.absdiff(prev_gray, current_gray)
+            
+            # Apply threshold to get significant changes
+            _, thresh = cv2.threshold(frame_diff, 25, 255, cv2.THRESH_BINARY)
+            
+            # Dilate the thresholded image to fill in holes
+            thresh = cv2.dilate(thresh, None, iterations=2)
+            
+            # Calculate the percentage of changed pixels
+            changed_pixels = np.sum(thresh > 0)
+            total_pixels = thresh.size
+            change_percentage = (changed_pixels / total_pixels) * 100
             
             # Update previous frame
             self.prev_frame = current_frame.copy()
             
-            return mean_magnitude > self.motion_threshold
+            # Return True if significant motion is detected
+            return change_percentage > 1.0  # 1% of pixels changed
             
         except Exception as e:
             logging.error(f"Error in motion detection: {str(e)}")
