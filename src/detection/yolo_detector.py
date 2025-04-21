@@ -8,18 +8,23 @@ from collections import defaultdict
 import time
 
 class YOLODetector:
-    def __init__(self, model_path: str = 'yolov8n.pt'):
+    def __init__(self, model_path: str = None):
         """Initialize the YOLO-based detection system"""
         try:
             # Load YOLO model
-            self.model = YOLO(model_path)
+            if model_path is None:
+                # Use default YOLOv8 model
+                self.model = YOLO('yolov8n.pt')
+            else:
+                self.model = YOLO(model_path)
             
-            # Define vehicle classes
+            # Define vehicle classes (COCO dataset classes)
             self.vehicle_classes = {
                 2: 'car',
                 3: 'motorcycle',
                 5: 'bus',
-                7: 'truck'
+                7: 'truck',
+                0: 'person'  # Include person for pedestrian accidents
             }
             
             # Detection parameters
@@ -41,8 +46,22 @@ class YOLODetector:
             )
             self.logger = logging.getLogger(__name__)
             
+            # Test model
+            self._test_model()
+            
         except Exception as e:
             self.logger.error(f"Failed to initialize YOLODetector: {str(e)}")
+            raise
+    
+    def _test_model(self):
+        """Test if the model is working properly"""
+        try:
+            # Create a test image
+            test_img = np.zeros((640, 640, 3), dtype=np.uint8)
+            results = self.model(test_img)
+            self.logger.info("Model test successful")
+        except Exception as e:
+            self.logger.error(f"Model test failed: {str(e)}")
             raise
     
     def process_image(self, image_path: str) -> Dict:
@@ -56,13 +75,11 @@ class YOLODetector:
             # Convert to RGB
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             
-            # Run YOLO detection with tracking
-            results = self.model.track(
+            # Run YOLO detection
+            results = self.model(
                 img_rgb,
                 conf=self.min_confidence,
-                persist=True,
-                classes=list(self.vehicle_classes.keys()),
-                tracker="bytetrack.yaml"
+                classes=list(self.vehicle_classes.keys())
             )
             
             if not results or len(results) == 0:
@@ -81,11 +98,11 @@ class YOLODetector:
             vehicle_boxes = []
             tracks = {}
             for box in result.boxes:
-                if box.id is not None:
-                    track_id = int(box.id[0])
-                    tracks[track_id] = {
+                class_id = int(box.cls[0])
+                if class_id in self.vehicle_classes:
+                    tracks[len(tracks)] = {
                         'bbox': box.xyxy[0].tolist(),
-                        'class': self.vehicle_classes.get(int(box.cls[0]), 'unknown'),
+                        'class': self.vehicle_classes[class_id],
                         'confidence': float(box.conf[0])
                     }
                     vehicle_boxes.append(box)
@@ -132,22 +149,26 @@ class YOLODetector:
             vehicle_counts = []
             severity_scores = []
             
-            # Process each frame
+            # Process every nth frame to improve performance
+            frame_skip = max(1, int(fps / 5))  # Process 5 frames per second
+            
+            # Process frames
             frame_idx = 0
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
                     break
                 
-                # Process frame
-                frame_result = self._process_frame(frame)
-                results.append(frame_result)
-                
-                # Update statistics
-                if frame_result['accident_detected']:
-                    accident_frames.append(frame_idx)
-                vehicle_counts.append(frame_result['vehicle_count'])
-                severity_scores.append(frame_result['severity']['severity_score'])
+                if frame_idx % frame_skip == 0:
+                    # Process frame
+                    frame_result = self._process_frame(frame)
+                    results.append(frame_result)
+                    
+                    # Update statistics
+                    if frame_result['accident_detected']:
+                        accident_frames.append(frame_idx)
+                    vehicle_counts.append(frame_result['vehicle_count'])
+                    severity_scores.append(frame_result['severity']['severity_score'])
                 
                 frame_idx += 1
             
@@ -189,13 +210,11 @@ class YOLODetector:
             # Convert frame to RGB
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            # Run YOLO detection with tracking
-            results = self.model.track(
+            # Run YOLO detection
+            results = self.model(
                 frame_rgb,
                 conf=self.min_confidence,
-                persist=True,
-                classes=list(self.vehicle_classes.keys()),
-                tracker="bytetrack.yaml"
+                classes=list(self.vehicle_classes.keys())
             )
             
             if not results or len(results) == 0:
@@ -214,11 +233,11 @@ class YOLODetector:
             vehicle_boxes = []
             tracks = {}
             for box in result.boxes:
-                if box.id is not None:
-                    track_id = int(box.id[0])
-                    tracks[track_id] = {
+                class_id = int(box.cls[0])
+                if class_id in self.vehicle_classes:
+                    tracks[len(tracks)] = {
                         'bbox': box.xyxy[0].tolist(),
-                        'class': self.vehicle_classes.get(int(box.cls[0]), 'unknown'),
+                        'class': self.vehicle_classes[class_id],
                         'confidence': float(box.conf[0])
                     }
                     vehicle_boxes.append(box)
@@ -321,6 +340,8 @@ class YOLODetector:
                 type_multiplier = max(type_multiplier, 1.5)
             elif vehicle_type == 'motorcycle':
                 type_multiplier = max(type_multiplier, 1.2)
+            elif vehicle_type == 'person':
+                type_multiplier = max(type_multiplier, 1.3)
         
         # Calculate final severity
         severity = count_severity * type_multiplier
