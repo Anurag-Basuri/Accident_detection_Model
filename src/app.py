@@ -13,6 +13,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 from typing import Dict, List, Any
 from detection.image_model import ImageModel
+from detection.video_model import VideoModel
 from utils.visualization import (
     create_severity_gauge,
     create_damage_bar_chart,
@@ -31,8 +32,10 @@ if os.name == 'nt':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Initialize session state
-if 'model' not in st.session_state:
-    st.session_state.model = ImageModel()
+if 'image_model' not in st.session_state:
+    st.session_state.image_model = ImageModel()
+if 'video_model' not in st.session_state:
+    st.session_state.video_model = VideoModel()
 if 'detection_history' not in st.session_state:
     st.session_state.detection_history = []
 if 'stats' not in st.session_state:
@@ -156,7 +159,7 @@ def process_image(image_file) -> Dict:
             temp_path = tmp_file.name
         
         # Process image
-        result = st.session_state.model.process_image(temp_path)
+        result = st.session_state.image_model.process_image(temp_path)
         
         return result
         
@@ -181,7 +184,7 @@ def process_video(video_file) -> Dict:
             temp_path = tmp_file.name
         
         # Process video
-        result = st.session_state.detector.process_video(temp_path)
+        result = st.session_state.video_model.process_video(temp_path)
         
         return result
         
@@ -196,7 +199,7 @@ def process_video(video_file) -> Dict:
             except Exception as e:
                 logging.error(f"Error cleaning up temporary file: {str(e)}")
 
-def update_statistics(result: Dict):
+def update_statistics(result: Dict, is_video: bool = False):
     """Update detection statistics"""
     current_time = datetime.now()
     
@@ -223,7 +226,7 @@ def update_statistics(result: Dict):
             st.session_state.stats['vehicle_types'][vehicle_type] = \
                 st.session_state.stats['vehicle_types'].get(vehicle_type, 0) + 1
 
-def display_detection_results(result: Dict):
+def display_detection_results(result: Dict, is_video: bool = False):
     """Display detection results with enhanced visualization"""
     if "error" in result:
         st.error(result["error"])
@@ -369,8 +372,13 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("📤 Upload Image")
-        uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+        st.header("📤 Upload Media")
+        media_type = st.radio("Select Media Type", ["Image", "Video"])
+        
+        if media_type == "Image":
+            uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+        else:
+            uploaded_file = st.file_uploader("Upload a video", type=["mp4", "avi", "mov"])
         
         st.header("🆘 Emergency Contacts")
         st.markdown("""
@@ -381,8 +389,10 @@ def main():
         
         st.header("⚙️ Settings")
         confidence_threshold = st.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.05)
-        if 'model' in st.session_state:
-            st.session_state.model.min_confidence = confidence_threshold
+        if 'image_model' in st.session_state:
+            st.session_state.image_model.min_confidence = confidence_threshold
+        if 'video_model' in st.session_state:
+            st.session_state.video_model.min_confidence = confidence_threshold
     
     # Main content
     if uploaded_file is not None:
@@ -396,13 +406,16 @@ def main():
         
         # Process file
         with st.spinner("Processing..."):
-            result = process_image(uploaded_file)
+            if media_type == "Image":
+                result = process_image(uploaded_file)
+            else:
+                result = process_video(uploaded_file)
         
         # Display results
-        display_detection_results(result)
+        display_detection_results(result, is_video=(media_type == "Video"))
         
         # Update statistics
-        update_statistics(result)
+        update_statistics(result, is_video=(media_type == "Video"))
         
         # Display statistics
         display_statistics()
