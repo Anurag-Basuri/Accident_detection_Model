@@ -7,27 +7,26 @@ import seaborn as sns
 
 def create_severity_gauge(severity_score: float) -> plt.Figure:
     """Create a gauge chart for severity visualization"""
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(6, 4), subplot_kw={'projection': 'polar'})
     
-    # Create gauge
-    ax.set_theta_zero_location('N')
-    ax.set_theta_direction(-1)
-    
-    # Define colors
+    # Define angles and colors
+    angles = np.linspace(0, np.pi, 100)
     colors = ['#4CAF50', '#FF9800', '#F44336']
     thresholds = [0.3, 0.7, 1.0]
     
-    # Plot gauge
+    # Create gauge background
     for i in range(len(thresholds)):
         if i == 0:
             start = 0
         else:
             start = thresholds[i-1]
         end = thresholds[i]
-        ax.bar(0, end-start, bottom=start, color=colors[i], alpha=0.5)
+        angle_range = np.linspace(start * np.pi, end * np.pi, 100)
+        ax.fill_between(angle_range, 0, 1, color=colors[i], alpha=0.5)
     
     # Add needle
-    ax.plot([0, severity_score], [0, 1], color='black', linewidth=2)
+    severity_angle = severity_score * np.pi
+    ax.plot([severity_angle, severity_angle], [0, 1], color='black', linewidth=2)
     
     # Add labels
     ax.set_xticks([])
