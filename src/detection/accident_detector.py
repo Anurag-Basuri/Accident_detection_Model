@@ -18,6 +18,14 @@ class AccidentDetector:
         self.frame_buffer = []
         self.max_buffer_size = 30  # Store last 30 frames for analysis
         
+        # Define vehicle classes
+        self.vehicle_classes = {
+            2: 'car',
+            3: 'motorcycle',
+            5: 'bus',
+            7: 'truck'
+        }
+        
         # Accident detection parameters
         self.min_confidence = 0.6
         self.min_vehicles = 2
@@ -58,10 +66,17 @@ class AccidentDetector:
             if accident_info['accident_detected']:
                 self.accident_history.append(accident_info)
             
+            # Add vehicle type information
+            vehicle_types = {}
+            for track in result['tracks'].values():
+                vehicle_type = track['class']
+                vehicle_types[vehicle_type] = vehicle_types.get(vehicle_type, 0) + 1
+            
             return {
                 'accident_detected': accident_info['accident_detected'],
                 'severity': accident_info['severity'],
                 'vehicle_count': len(result['tracks']),
+                'vehicle_types': vehicle_types,
                 'collisions': collisions,
                 'tracks': result['tracks'],
                 'detections': result['detections']

@@ -254,14 +254,10 @@ def update_statistics(result: Dict):
     st.session_state.stats['detection_times'].append(current_time)
     
     # Update vehicle types
-    if 'detections' in result:
-        for box in result['detections']:
-            if hasattr(box, 'cls') and len(box.cls) > 0:
-                cls = int(box.cls[0])
-                if cls in st.session_state.detector.vehicle_classes:
-                    vehicle_type = st.session_state.detector.vehicle_classes[cls]
-                    st.session_state.stats['vehicle_types'][vehicle_type] = \
-                        st.session_state.stats['vehicle_types'].get(vehicle_type, 0) + 1
+    if 'vehicle_types' in result:
+        for vehicle_type, count in result['vehicle_types'].items():
+            st.session_state.stats['vehicle_types'][vehicle_type] = \
+                st.session_state.stats['vehicle_types'].get(vehicle_type, 0) + count
 
 def display_statistics():
     """Display comprehensive statistics"""
