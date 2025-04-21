@@ -37,3 +37,4 @@ cuda-python>=11.8.0  # CUDA support
 tqdm>=4.65.0  # Progress bars
 python-dotenv==1.0.1  # Environment variables
 loguru>=0.7.0  # Logging
+lap>=0.4.0
