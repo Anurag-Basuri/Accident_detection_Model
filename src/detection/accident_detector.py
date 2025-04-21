@@ -15,9 +15,11 @@ class AccidentDetector:
         try:
             # Load YOLOv8 model with GPU acceleration if available
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-            model_path = 'yolov8x.pt'
+            model_path = 'yolov8x.pt'  # Using the largest model for better accuracy
             if not os.path.exists(model_path):
                 raise FileNotFoundError(f"Model file not found at {model_path}")
+            
+            # Initialize model with higher confidence threshold
             self.yolo_model = YOLO(model_path).to(self.device)
             
             # Vehicle classes with more specific types
@@ -28,23 +30,28 @@ class AccidentDetector:
                 7: "truck"
             }
             
-            # Detection thresholds
-            self.min_confidence = 0.5
+            # Enhanced detection thresholds
+            self.min_confidence = 0.6  # Increased from 0.5
             self.min_vehicles = 2
             self.min_overlap = 0.3
-            self.min_confidence_for_accident = 0.7
+            self.min_confidence_for_accident = 0.75  # Increased from 0.7
             self.min_vehicle_size = 100  # Minimum pixel size for a vehicle
             
             # Motion analysis parameters
-            self.motion_threshold = 10  # Minimum motion magnitude
+            self.motion_threshold = 10
             self.prev_frame = None
             self.prev_detections = None
             
             # Initialize tracking with cleanup
             self.track_history = {}
-            self.max_track_history = 30  # Number of frames to keep in history
-            self.track_cleanup_interval = 100  # Cleanup tracking history every N frames
+            self.max_track_history = 30
+            self.track_cleanup_interval = 100
             self.frame_counter = 0
+            
+            # Additional validation parameters
+            self.min_velocity_threshold = 5.0  # Minimum velocity for accident detection
+            self.max_distance_threshold = 200  # Maximum distance between vehicles for accident
+            self.min_frame_consistency = 3  # Minimum number of consistent frames for accident
             
         except Exception as e:
             raise RuntimeError(f"Failed to initialize AccidentDetector: {str(e)}")
@@ -275,42 +282,101 @@ class AccidentDetector:
         
         return max_overlap
     
+    def _validate_detection(self, box) -> bool:
+        """Validate a single detection"""
+        try:
+            # Check if box has required attributes
+            if not hasattr(box, 'cls') or not hasattr(box, 'xyxy') or not hasattr(box, 'conf'):
+                return False
+            
+            # Check confidence
+            if len(box.conf) == 0 or float(box.conf[0]) < self.min_confidence:
+                return False
+            
+            # Check class
+            if len(box.cls) == 0 or int(box.cls[0]) not in self.vehicle_classes:
+                return False
+            
+            # Check size
+            if len(box.xyxy) == 0 or len(box.xyxy[0]) < 4:
+                return False
+            
+            x1, y1, x2, y2 = map(int, box.xyxy[0][:4])
+            width = x2 - x1
+            height = y2 - y1
+            
+            return width >= self.min_vehicle_size or height >= self.min_vehicle_size
+            
+        except Exception:
+            return False
+
     def _check_vehicle_positions(self, boxes: List) -> bool:
-        """Check if vehicle positions indicate a potential accident"""
+        """Enhanced check for vehicle positions indicating a potential accident"""
         if len(boxes) < 2:
             return False
         
-        # Calculate center points and velocities of vehicles
-        centers = []
-        velocities = []
-        
-        for box in boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            center_x = (x1 + x2) / 2
-            center_y = (y1 + y2) / 2
-            centers.append((center_x, center_y))
+        try:
+            # Calculate center points and velocities of vehicles
+            centers = []
+            velocities = []
+            valid_boxes = []
             
-            # Calculate velocity if tracking data available
-            if hasattr(box, 'id') and box.id in self.track_history:
-                velocity = self._calculate_velocity(box.id)
-                velocities.append(velocity)
+            for box in boxes:
+                if not self._validate_detection(box):
+                    continue
+                    
+                x1, y1, x2, y2 = map(int, box.xyxy[0][:4])
+                center_x = (x1 + x2) / 2
+                center_y = (y1 + y2) / 2
+                centers.append((center_x, center_y))
+                valid_boxes.append(box)
+                
+                # Calculate velocity if tracking data available
+                if hasattr(box, 'id') and box.id in self.track_history:
+                    velocity = self._calculate_velocity(box.id)
+                    if velocity is not None:
+                        velocities.append(velocity)
+            
+            if len(valid_boxes) < 2:
+                return False
+            
+            # Check if vehicles are close to each other
+            min_distance = float('inf')
+            for i, (x1, y1) in enumerate(centers):
+                for x2, y2 in centers[i+1:]:
+                    distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                    min_distance = min(min_distance, distance)
+            
+            # Check if vehicles are moving towards each other
+            is_converging = False
+            if len(velocities) >= 2:
+                relative_velocity = np.array(velocities[0]) - np.array(velocities[1])
+                is_converging = np.dot(relative_velocity, np.array(centers[1]) - np.array(centers[0])) < 0
+            
+            # Enhanced accident detection criteria
+            return (min_distance < self.max_distance_threshold and 
+                   is_converging and 
+                   self._check_velocity_threshold(velocities))
+            
+        except Exception as e:
+            logging.error(f"Error in vehicle position check: {str(e)}")
+            return False
+
+    def _check_velocity_threshold(self, velocities: List) -> bool:
+        """Check if vehicle velocities exceed threshold"""
+        if not velocities:
+            return False
         
-        # Check if vehicles are close to each other
-        min_distance = float('inf')
-        for i, (x1, y1) in enumerate(centers):
-            for x2, y2 in centers[i+1:]:
-                distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                min_distance = min(min_distance, distance)
-        
-        # Check if vehicles are moving towards each other
-        is_converging = False
-        if len(velocities) >= 2:
-            relative_velocity = np.array(velocities[0]) - np.array(velocities[1])
-            is_converging = np.dot(relative_velocity, np.array(centers[1]) - np.array(centers[0])) < 0
-        
-        # If vehicles are very close and converging, it might indicate an accident
-        return min_distance < 100 and is_converging
-    
+        try:
+            # Calculate average velocity magnitude
+            velocity_magnitudes = [np.sqrt(vx**2 + vy**2) for vx, vy in velocities]
+            avg_velocity = np.mean(velocity_magnitudes)
+            
+            return avg_velocity > self.min_velocity_threshold
+            
+        except Exception:
+            return False
+
     def _check_motion(self, current_frame: np.ndarray) -> bool:
         """Check for significant motion in the scene using frame differencing"""
         if self.prev_frame is None:
@@ -402,25 +468,36 @@ class AccidentDetector:
         return (dx, dy)
     
     def _check_temporal_consistency(self, current_result: Dict, current_frame: np.ndarray) -> bool:
-        """Check if the current detection is consistent with previous frames"""
+        """Enhanced check for temporal consistency in accident detection"""
         if self.prev_detections is None or self.prev_frame is None:
+            self.prev_detections = current_result["detections"]
+            self.prev_frame = current_frame
             return True
         
-        # Check if the number of vehicles is consistent
-        if abs(len(current_result["detections"]) - len(self.prev_detections)) > 2:
+        try:
+            # Check if the number of vehicles is consistent
+            if abs(len(current_result["detections"]) - len(self.prev_detections)) > 2:
+                return False
+            
+            # Check if the overlap is consistent
+            current_overlap = current_result["overlap"]
+            prev_overlap = self._calculate_overlap(self.prev_detections)
+            if abs(current_overlap - prev_overlap) > 0.3:
+                return False
+            
+            # Check motion consistency
+            if not self._check_motion(current_frame):
+                return False
+            
+            # Update previous frame and detections
+            self.prev_detections = current_result["detections"]
+            self.prev_frame = current_frame
+            
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error in temporal consistency check: {str(e)}")
             return False
-        
-        # Check if the overlap is consistent
-        current_overlap = current_result["overlap"]
-        prev_overlap = self._calculate_overlap(self.prev_detections)
-        if abs(current_overlap - prev_overlap) > 0.3:
-            return False
-        
-        # Check motion consistency
-        if not self._check_motion(current_frame):
-            return False
-        
-        return True
     
     def _calculate_severity(self, boxes: List, overlap: float) -> Dict:
         """Calculate severity of potential accident"""
