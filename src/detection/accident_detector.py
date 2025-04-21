@@ -9,6 +9,7 @@ import tempfile
 import shutil
 import logging
 from .tracker import ObjectTracker
+from utils.image_utils import predict_image
 
 class AccidentDetector:
     def __init__(self):
@@ -154,9 +155,12 @@ class AccidentDetector:
         return min(severity, 1.0)  # Cap at 1.0
 
     def process_image(self, image_path: str) -> Dict:
-        """Process a single image for accident detection"""
+        """Process a single image for accident detection using custom model"""
         try:
-            # Read image
+            # Use custom model for prediction
+            is_accident = predict_image(image_path)
+            
+            # Read image for visualization
             img = cv2.imread(image_path)
             if img is None:
                 return {"accident_detected": False, "error": "Failed to read image"}
@@ -164,13 +168,40 @@ class AccidentDetector:
             # Convert to RGB
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             
-            # Process frame
-            result = self.process_frame(img_rgb)
+            # Get vehicle count and types using YOLO
+            result = self.tracker.process_frame(img_rgb)
+            if "error" in result:
+                return {"accident_detected": False, "error": result["error"]}
             
-            # Add image path to result
-            result["image_path"] = image_path
+            # Count vehicle types
+            vehicle_types = {}
+            for track in result['tracks'].values():
+                vehicle_type = track['class']
+                vehicle_types[vehicle_type] = vehicle_types.get(vehicle_type, 0) + 1
             
-            return result
+            # Calculate severity based on vehicle count and types
+            severity_score = self._calculate_severity(len(result['tracks']), vehicle_types)
+            
+            # Determine severity level
+            if severity_score < 0.3:
+                level = 'Minor'
+            elif severity_score < 0.7:
+                level = 'Moderate'
+            else:
+                level = 'Severe'
+            
+            return {
+                'accident_detected': is_accident,
+                'severity': {
+                    'level': level,
+                    'severity_score': severity_score
+                },
+                'vehicle_count': len(result['tracks']),
+                'vehicle_types': vehicle_types,
+                'tracks': result['tracks'],
+                'detections': result['detections'],
+                'image_path': image_path
+            }
             
         except Exception as e:
             return {"accident_detected": False, "error": str(e)}
