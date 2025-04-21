@@ -11,7 +11,7 @@ class ImageModel:
         try:
             # Load YOLO model
             if model_path is None:
-                # Use default YOLOv8 model
+                # Use YOLOv8n model for better accuracy
                 self.model = YOLO('yolov8n.pt')
             else:
                 self.model = YOLO(model_path)
