@@ -280,21 +280,41 @@ class AccidentDetector:
             self.prev_frame = current_frame
             return False
         
-        # Convert frames to grayscale
-        prev_gray = cv2.cvtColor(self.prev_frame, cv2.COLOR_RGB2GRAY)
-        current_gray = cv2.cvtColor(current_frame, cv2.COLOR_RGB2GRAY)
-        
-        # Calculate optical flow
-        flow = cv2.calcOpticalFlowFarneback(prev_gray, current_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-        
-        # Calculate motion magnitude
-        magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
-        mean_magnitude = np.mean(magnitude)
-        
-        # Update previous frame
-        self.prev_frame = current_frame
-        
-        return mean_magnitude > self.motion_threshold
+        try:
+            # Ensure frames have the same dimensions
+            if self.prev_frame.shape != current_frame.shape:
+                self.prev_frame = cv2.resize(self.prev_frame, (current_frame.shape[1], current_frame.shape[0]))
+            
+            # Convert frames to grayscale
+            prev_gray = cv2.cvtColor(self.prev_frame, cv2.COLOR_RGB2GRAY)
+            current_gray = cv2.cvtColor(current_frame, cv2.COLOR_RGB2GRAY)
+            
+            # Calculate optical flow with proper parameters
+            flow = cv2.calcOpticalFlowFarneback(
+                prev_gray, current_gray, None,
+                pyr_scale=0.5,  # Pyramid scale
+                levels=3,       # Number of pyramid layers
+                winsize=15,     # Window size
+                iterations=3,   # Number of iterations
+                poly_n=5,       # Size of pixel neighborhood
+                poly_sigma=1.2, # Standard deviation of Gaussian
+                flags=0
+            )
+            
+            # Calculate motion magnitude
+            magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
+            mean_magnitude = np.mean(magnitude)
+            
+            # Update previous frame
+            self.prev_frame = current_frame.copy()
+            
+            return mean_magnitude > self.motion_threshold
+            
+        except Exception as e:
+            logging.error(f"Error in motion detection: {str(e)}")
+            # Reset previous frame on error
+            self.prev_frame = current_frame.copy()
+            return False
     
     def _update_tracking(self, boxes: List) -> None:
         """Update tracking history with cleanup"""

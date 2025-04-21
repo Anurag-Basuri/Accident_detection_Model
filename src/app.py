@@ -109,18 +109,18 @@ def process_image(image_file) -> Dict:
         # Process image
         result = st.session_state.detector.process_image(temp_path)
         
+        # Add image path to result
+        result["image_path"] = temp_path
+        
         return result
         
     except Exception as e:
         st.error(f"Error processing image: {str(e)}")
         return {"accident_detected": False, "error": str(e)}
     finally:
-        # Clean up temporary file
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-            except Exception as e:
-                logging.error(f"Error cleaning up temporary file: {str(e)}")
+        # Note: We don't delete the temp file here as it's needed for display
+        # It will be cleaned up after display_detection_results is done
+        pass
 
 def process_video(video_file) -> Dict:
     """Process an uploaded video"""
@@ -165,51 +165,73 @@ def display_detection_results(result: Dict, file_type: str):
     
     # Display detection boxes
     if file_type == "image" and "detections" in result:
-        # Convert image to RGB for visualization
-        img = cv2.imread(result["image_path"])
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        
-        # Draw detection boxes
-        annotated_img, detected_objects = draw_detection_boxes(
-            img_rgb, result["detections"], result["accident_detected"])
-        
-        # Display annotated image
-        st.image(annotated_img, caption="Detection Results", use_column_width=True)
-        
-        # Display object summary
-        st.markdown("### Detected Objects")
-        for obj_type, count in detected_objects.items():
-            st.write(f"- {obj_type}: {count}")
+        try:
+            # Convert image to RGB for visualization
+            if "image_path" in result:
+                img = cv2.imread(result["image_path"])
+                if img is not None:
+                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    
+                    # Draw detection boxes
+                    annotated_img, detected_objects = draw_detection_boxes(
+                        img_rgb, result["detections"], result["accident_detected"])
+                    
+                    # Display annotated image
+                    st.image(annotated_img, caption="Detection Results", use_column_width=True)
+                    
+                    # Display object summary
+                    st.markdown("### Detected Objects")
+                    for obj_type, count in detected_objects.items():
+                        st.write(f"- {obj_type}: {count}")
+                    
+                    # Clean up temporary file after display
+                    if os.path.exists(result["image_path"]):
+                        os.remove(result["image_path"])
+                else:
+                    st.error("Failed to load the processed image")
+            else:
+                st.error("Image path not found in results")
+        except Exception as e:
+            st.error(f"Error displaying image results: {str(e)}")
     
     # Display video results
     elif file_type == "video" and "frames" in result:
         st.markdown("### Accident Frames")
         for frame_data in result["frames"]:
-            frame = frame_data["frame"]
-            frame_number = frame_data["frame_number"]
-            
-            # Draw detection boxes
-            annotated_frame, _ = draw_detection_boxes(
-                frame, frame_data["result"]["detections"], True)
-            
-            # Display frame
-            st.image(annotated_frame, caption=f"Frame {frame_number}", use_column_width=True)
+            if "frame" in frame_data:
+                frame = frame_data["frame"]
+                frame_number = frame_data["frame_number"]
+                
+                # Draw detection boxes
+                annotated_frame, _ = draw_detection_boxes(
+                    frame, frame_data["result"]["detections"], True)
+                
+                # Display frame
+                st.image(annotated_frame, caption=f"Frame {frame_number}", use_column_width=True)
     
     # Display impact visualization
     if "overlap" in result and "detections" in result:
-        vehicle_types = [st.session_state.detector.vehicle_classes[int(box.cls)] 
-                        for box in result["detections"]]
-        fig = create_impact_visualization(result["overlap"], vehicle_types)
-        st.pyplot(fig)
+        try:
+            vehicle_types = [st.session_state.detector.vehicle_classes[int(box.cls)] 
+                           for box in result["detections"]]
+            fig = create_impact_visualization(result["overlap"], vehicle_types)
+            st.pyplot(fig)
+        except Exception as e:
+            st.error(f"Error creating impact visualization: {str(e)}")
     
     # Display damage assessment
     if "severity" in result and "detections" in result:
-        damage_details = {
-            vehicle_type: {"total_damage": result["severity"]["severity_score"] * 10000}
-            for vehicle_type in set(vehicle_types)
-        }
-        fig = create_damage_bar_chart(damage_details)
-        st.pyplot(fig)
+        try:
+            vehicle_types = [st.session_state.detector.vehicle_classes[int(box.cls)] 
+                           for box in result["detections"]]
+            damage_details = {
+                vehicle_type: {"total_damage": result["severity"]["severity_score"] * 10000}
+                for vehicle_type in set(vehicle_types)
+            }
+            fig = create_damage_bar_chart(damage_details)
+            st.pyplot(fig)
+        except Exception as e:
+            st.error(f"Error creating damage assessment: {str(e)}")
 
 def main():
     """Main application function"""
