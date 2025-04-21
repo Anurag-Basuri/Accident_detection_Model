@@ -239,9 +239,15 @@ def display_statistics():
     with tab1:
         # Display detection trends
         if len(st.session_state.stats['detection_times']) > 1:
+            # Ensure all arrays have the same length
+            min_length = min(
+                len(st.session_state.stats['detection_times']),
+                len(st.session_state.stats['vehicle_counts'])
+            )
+            
             df = pd.DataFrame({
-                'Time': st.session_state.stats['detection_times'],
-                'Vehicle Count': st.session_state.stats['vehicle_counts']
+                'Time': st.session_state.stats['detection_times'][:min_length],
+                'Vehicle Count': st.session_state.stats['vehicle_counts'][:min_length]
             })
             fig = px.line(df, x='Time', y='Vehicle Count', title='Vehicle Detection Trends')
             st.plotly_chart(fig, use_container_width=True)
