@@ -5,6 +5,9 @@ from typing import Dict, List, Union, Tuple
 import os
 import torch
 from torchvision.ops import box_iou
+import tempfile
+import shutil
+import logging
 
 class AccidentDetector:
     def __init__(self):
@@ -138,48 +141,58 @@ class AccidentDetector:
         Returns:
             Dictionary containing detection results
         """
+        cap = None
+        temp_dir = None
         try:
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
                 return {"accident_detected": False, "error": "Failed to open video"}
             
+            # Create temporary directory for frame storage
+            temp_dir = tempfile.mkdtemp()
             frames = []
             frame_number = 0
             accident_frames = []
+            frame_skip = 5  # Process every 5th frame
+            
+            # Get video properties
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS)
             
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
                     break
                 
-                # Process every 5th frame
-                if frame_number % 5 == 0:
+                # Process every Nth frame
+                if frame_number % frame_skip == 0:
                     # Save frame to temporary file
-                    temp_path = f"temp_frame_{frame_number}.jpg"
+                    temp_path = os.path.join(temp_dir, f"frame_{frame_number}.jpg")
                     cv2.imwrite(temp_path, frame)
                     
-                    # Process frame
-                    result = self.process_image(temp_path)
-                    
-                    # Check for temporal consistency
-                    if result["accident_detected"]:
-                        if self._check_temporal_consistency(result, frame):
-                            accident_frames.append({
-                                "frame": frame,
-                                "frame_number": frame_number,
-                                "result": result
-                            })
-                    
-                    # Update previous frame and detections
-                    self.prev_frame = frame
-                    self.prev_detections = result["detections"]
-                    
-                    # Clean up
-                    os.remove(temp_path)
+                    try:
+                        # Process frame
+                        result = self.process_image(temp_path)
+                        
+                        # Check for temporal consistency
+                        if result["accident_detected"]:
+                            if self._check_temporal_consistency(result, frame):
+                                # Store only necessary information to save memory
+                                accident_frames.append({
+                                    "frame_number": frame_number,
+                                    "timestamp": frame_number / fps,
+                                    "result": {
+                                        "accident_detected": result["accident_detected"],
+                                        "severity": result.get("severity"),
+                                        "detections": result.get("detections", [])
+                                    }
+                                })
+                    finally:
+                        # Clean up temporary frame file
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
                 
                 frame_number += 1
-            
-            cap.release()
             
             # Determine if accident was detected
             is_accident = len(accident_frames) > 0
@@ -190,11 +203,22 @@ class AccidentDetector:
             return {
                 "accident_detected": is_accident,
                 "frames": accident_frames,
-                "severity": severity
+                "severity": severity,
+                "total_frames": total_frames,
+                "processed_frames": frame_number // frame_skip
             }
             
         except Exception as e:
             return {"accident_detected": False, "error": str(e)}
+        finally:
+            # Clean up resources
+            if cap is not None:
+                cap.release()
+            if temp_dir is not None and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception as e:
+                    logging.error(f"Error cleaning up temporary directory: {str(e)}")
     
     def _calculate_overlap(self, boxes: List) -> float:
         """Calculate maximum overlap between vehicle bounding boxes"""
