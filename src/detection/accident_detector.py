@@ -598,4 +598,77 @@ class AccidentDetector:
             "level": level,
             "severity_score": avg_severity,
             "frame_count": len(accident_frames)
-        } 
+        }
+
+    def _load_model(self):
+        """Load the YOLO model"""
+        try:
+            model = YOLO('yolov8n.pt')
+            return model
+        except Exception as e:
+            raise Exception(f"Failed to load model: {str(e)}")
+    
+    def process_frame(self, frame: np.ndarray) -> Dict:
+        """Process a single frame for accident detection"""
+        try:
+            # Convert frame to RGB if needed
+            if len(frame.shape) == 3 and frame.shape[2] == 3:
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            else:
+                frame_rgb = frame
+            
+            # Run detection
+            results = self.model(frame_rgb, conf=self.min_confidence)
+            
+            # Process detections
+            detections = results[0].boxes
+            vehicle_count = 0
+            vehicle_types = {}
+            
+            # Count vehicles and their types
+            for box in detections:
+                if hasattr(box, 'cls') and len(box.cls) > 0:
+                    cls = int(box.cls[0])
+                    if cls in self.vehicle_classes:
+                        vehicle_count += 1
+                        vehicle_type = self.vehicle_classes[cls]
+                        vehicle_types[vehicle_type] = vehicle_types.get(vehicle_type, 0) + 1
+            
+            # Calculate severity based on vehicle count and types
+            severity_score = self._calculate_severity(vehicle_count, vehicle_types)
+            
+            # Determine if accident is detected
+            accident_detected = severity_score > 0.5
+            
+            return {
+                'accident_detected': accident_detected,
+                'severity': {
+                    'severity_score': severity_score,
+                    'level': 'Minor' if severity_score < 0.3 else 'Moderate' if severity_score < 0.7 else 'Severe'
+                },
+                'vehicle_count': vehicle_count,
+                'vehicle_types': vehicle_types,
+                'detections': detections
+            }
+            
+        except Exception as e:
+            return {
+                'accident_detected': False,
+                'error': f"Error processing frame: {str(e)}"
+            }
+    
+    def _calculate_severity(self, vehicle_count: int, vehicle_types: Dict) -> float:
+        """Calculate severity score based on vehicle count and types"""
+        # Base severity on vehicle count
+        count_severity = min(vehicle_count / 5, 1.0)  # Cap at 5 vehicles
+        
+        # Adjust severity based on vehicle types
+        type_multiplier = 1.0
+        if 'truck' in vehicle_types or 'bus' in vehicle_types:
+            type_multiplier = 1.5
+        elif 'motorcycle' in vehicle_types:
+            type_multiplier = 1.2
+        
+        # Calculate final severity
+        severity = count_severity * type_multiplier
+        return min(severity, 1.0)  # Cap at 1.0 
