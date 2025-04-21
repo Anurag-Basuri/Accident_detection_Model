@@ -27,7 +27,7 @@ def predict_image(image_path):
     img = np.expand_dims(img, axis=0)
     
     # Load model
-    model_path = os.path.join(os.path.dirname(__file__), "../models/image_model.h5")
+    model_path = os.path.join(os.path.dirname(__file__), "/models/image_model.h5")
     model = tf.keras.models.load_model(model_path)
     
     # Make prediction
