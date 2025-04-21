@@ -6,6 +6,7 @@ import os
 import asyncio
 import warnings
 import logging
+import time
 from typing import Dict, List, Any
 from detection.accident_detector import AccidentDetector
 from utils.visualization import (
@@ -98,6 +99,7 @@ def display_detection_progress():
 
 def process_image(image_file) -> Dict:
     """Process an uploaded image"""
+    temp_path = None
     try:
         # Save uploaded file to temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
@@ -107,17 +109,22 @@ def process_image(image_file) -> Dict:
         # Process image
         result = st.session_state.detector.process_image(temp_path)
         
-        # Clean up
-        os.unlink(temp_path)
-        
         return result
         
     except Exception as e:
         st.error(f"Error processing image: {str(e)}")
         return {"accident_detected": False, "error": str(e)}
+    finally:
+        # Clean up temporary file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception as e:
+                logging.error(f"Error cleaning up temporary file: {str(e)}")
 
 def process_video(video_file) -> Dict:
     """Process an uploaded video"""
+    temp_path = None
     try:
         # Save uploaded file to temporary location
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
@@ -127,14 +134,18 @@ def process_video(video_file) -> Dict:
         # Process video
         result = st.session_state.detector.process_video(temp_path)
         
-        # Clean up
-        os.unlink(temp_path)
-        
         return result
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
         return {"accident_detected": False, "error": str(e)}
+    finally:
+        # Clean up temporary file
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception as e:
+                logging.error(f"Error cleaning up temporary file: {str(e)}")
 
 def display_detection_results(result: Dict, file_type: str):
     """Display detection results with enhanced visualization"""

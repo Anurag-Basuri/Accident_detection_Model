@@ -9,33 +9,42 @@ from torchvision.ops import box_iou
 class AccidentDetector:
     def __init__(self):
         """Initialize the accident detection system"""
-        # Load YOLOv8 model with GPU acceleration if available
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.yolo_model = YOLO('yolov8x.pt').to(self.device)  # Using larger model for better accuracy
-        
-        # Vehicle classes with more specific types
-        self.vehicle_classes = {
-            2: "car",
-            3: "motorcycle",
-            5: "bus",
-            7: "truck"
-        }
-        
-        # Detection thresholds
-        self.min_confidence = 0.5
-        self.min_vehicles = 2
-        self.min_overlap = 0.3
-        self.min_confidence_for_accident = 0.7
-        self.min_vehicle_size = 100  # Minimum pixel size for a vehicle
-        
-        # Motion analysis parameters
-        self.motion_threshold = 10  # Minimum motion magnitude
-        self.prev_frame = None
-        self.prev_detections = None
-        
-        # Initialize tracking
-        self.track_history = {}
-        self.max_track_history = 30  # Number of frames to keep in history
+        try:
+            # Load YOLOv8 model with GPU acceleration if available
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            model_path = 'yolov8x.pt'
+            if not os.path.exists(model_path):
+                raise FileNotFoundError(f"Model file not found at {model_path}")
+            self.yolo_model = YOLO(model_path).to(self.device)
+            
+            # Vehicle classes with more specific types
+            self.vehicle_classes = {
+                2: "car",
+                3: "motorcycle",
+                5: "bus",
+                7: "truck"
+            }
+            
+            # Detection thresholds
+            self.min_confidence = 0.5
+            self.min_vehicles = 2
+            self.min_overlap = 0.3
+            self.min_confidence_for_accident = 0.7
+            self.min_vehicle_size = 100  # Minimum pixel size for a vehicle
+            
+            # Motion analysis parameters
+            self.motion_threshold = 10  # Minimum motion magnitude
+            self.prev_frame = None
+            self.prev_detections = None
+            
+            # Initialize tracking with cleanup
+            self.track_history = {}
+            self.max_track_history = 30  # Number of frames to keep in history
+            self.track_cleanup_interval = 100  # Cleanup tracking history every N frames
+            self.frame_counter = 0
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize AccidentDetector: {str(e)}")
     
     def process_image(self, image_path: str) -> Dict:
         """
@@ -264,21 +273,38 @@ class AccidentDetector:
         return mean_magnitude > self.motion_threshold
     
     def _update_tracking(self, boxes: List) -> None:
-        """Update vehicle tracking history"""
+        """Update tracking history with cleanup"""
+        self.frame_counter += 1
+        
+        # Cleanup old tracking data periodically
+        if self.frame_counter % self.track_cleanup_interval == 0:
+            self._cleanup_tracking_history()
+        
+        # Update tracking for current frame
         for box in boxes:
             if hasattr(box, 'id'):
-                if box.id not in self.track_history:
-                    self.track_history[box.id] = []
+                track_id = box.id
+                if track_id not in self.track_history:
+                    self.track_history[track_id] = []
                 
-                # Add current position to history
+                # Store box coordinates and timestamp
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 center_x = (x1 + x2) / 2
                 center_y = (y1 + y2) / 2
-                self.track_history[box.id].append((center_x, center_y))
+                self.track_history[track_id].append((center_x, center_y, self.frame_counter))
                 
                 # Keep only recent history
-                if len(self.track_history[box.id]) > self.max_track_history:
-                    self.track_history[box.id].pop(0)
+                if len(self.track_history[track_id]) > self.max_track_history:
+                    self.track_history[track_id] = self.track_history[track_id][-self.max_track_history:]
+    
+    def _cleanup_tracking_history(self) -> None:
+        """Remove old tracking data"""
+        current_time = self.frame_counter
+        # Remove tracks that haven't been updated in the last max_track_history frames
+        self.track_history = {
+            track_id: history for track_id, history in self.track_history.items()
+            if current_time - history[-1][2] < self.max_track_history
+        }
     
     def _calculate_velocity(self, track_id: int) -> Tuple[float, float]:
         """Calculate vehicle velocity from tracking history"""
