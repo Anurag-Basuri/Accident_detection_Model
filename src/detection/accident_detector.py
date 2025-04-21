@@ -136,4 +136,89 @@ class AccidentDetector:
         
         # Calculate final severity
         severity = count_severity * type_multiplier
-        return min(severity, 1.0)  # Cap at 1.0 
+        return min(severity, 1.0)  # Cap at 1.0
+
+    def process_image(self, image_path: str) -> Dict:
+        """Process a single image for accident detection"""
+        try:
+            # Read image
+            img = cv2.imread(image_path)
+            if img is None:
+                return {"accident_detected": False, "error": "Failed to read image"}
+            
+            # Convert to RGB
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            
+            # Process frame
+            result = self.process_frame(img_rgb)
+            
+            # Add image path to result
+            result["image_path"] = image_path
+            
+            return result
+            
+        except Exception as e:
+            return {"accident_detected": False, "error": str(e)}
+
+    def process_video(self, video_path: str) -> Dict:
+        """Process a video file for accident detection"""
+        cap = None
+        try:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                return {"accident_detected": False, "error": "Failed to open video"}
+            
+            # Get video properties
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps
+            
+            # Initialize progress tracking
+            results = []
+            frame_skip = max(1, int(fps / 5))  # Process 5 frames per second
+            
+            # Process video frames
+            for frame_idx in range(0, frame_count, frame_skip):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Process frame
+                result = self.process_frame(frame)
+                results.append(result)
+            
+            # Release video capture
+            cap.release()
+            
+            # Aggregate results
+            if results:
+                # Calculate average severity
+                severity_scores = [r.get('severity', {}).get('severity_score', 0) for r in results]
+                avg_severity = np.mean(severity_scores)
+                
+                # Determine if accident occurred
+                accident_detected = any(r.get('accident_detected', False) for r in results)
+                
+                # Get vehicle counts
+                vehicle_counts = [r.get('vehicle_count', 0) for r in results]
+                
+                return {
+                    'accident_detected': accident_detected,
+                    'severity': {
+                        'severity_score': avg_severity,
+                        'level': 'Minor' if avg_severity < 0.3 else 'Moderate' if avg_severity < 0.7 else 'Severe'
+                    },
+                    'vehicle_count': int(np.mean(vehicle_counts)),
+                    'duration': duration,
+                    'frame_results': results
+                }
+            
+            return {"accident_detected": False, "error": "No frames processed"}
+            
+        except Exception as e:
+            return {"accident_detected": False, "error": str(e)}
+        finally:
+            # Clean up resources
+            if cap is not None:
+                cap.release() 
