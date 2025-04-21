@@ -68,11 +68,14 @@ class AccidentDetector:
             # Convert to RGB
             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             
-            # Run YOLO detection with tracking
-            results = self.yolo_model.track(img_rgb, 
-                                         conf=self.min_confidence,
-                                         persist=True,
-                                         classes=list(self.vehicle_classes.keys()))
+            # Run YOLO detection with simplified tracking
+            results = self.yolo_model.track(
+                img_rgb,
+                conf=self.min_confidence,
+                persist=True,
+                classes=list(self.vehicle_classes.keys()),
+                tracker="bytetrack.yaml"  # Use ByteTrack instead of default tracker
+            )
             
             # Process detection results
             if isinstance(results, list):
@@ -106,8 +109,7 @@ class AccidentDetector:
                 # Additional checks for accident detection
                 if (overlap >= self.min_overlap and 
                     high_confidence_vehicles >= 2 and 
-                    self._check_vehicle_positions(vehicle_boxes) and
-                    self._check_motion(img_rgb)):
+                    self._check_vehicle_positions(vehicle_boxes)):
                     is_accident = True
             
             # Calculate severity
