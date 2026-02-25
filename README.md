@@ -2,271 +2,203 @@
 
 ## Overview
 
-Road accidents are a significant issue, causing loss of life and property. Delays in accident detection and reporting often lead to increased casualties and slower emergency response times. This project aims to develop an AI-powered system that leverages computer vision and machine learning to detect accidents in real-time from photos and videos.
+Road accidents are a significant issue, causing loss of life and property. Delays in accident detection and reporting often lead to increased casualties and slower emergency response times. This project develops an AI-powered system that leverages computer vision and machine learning to detect accidents from images and videos, and assess their severity.
+
+This is a **supervised machine-learning** project: models learn from labelled datasets (Accident / Non-Accident) to classify new inputs.
 
 ## Features
 
-- **Accident Detection**: Real-time detection of accidents using object detection and tracking
-- **Severity Assessment**: Analysis of collision patterns and vehicle behavior
-- **Automated Notifications**: Real-time alerts to emergency services upon accident detection
-- **Insurance Reporting**: Automated generation of structured reports to assist in claim processing
+- **Image Classification** — Detect accidents in single images using a MobileNetV2 CNN
+- **Video Classification** — Detect accidents in video clips using a 3D ResNet (R3D-18)
+- **Severity Assessment** — Evaluate accident severity with a YOLOv8-based model
+- **Streamlit App** — Interactive web UI for uploading images/videos and viewing predictions
 
-## Technical Implementation
+## Models
 
-### Core Components
-
-#### 1. Object Detection (YOLOv8)
-
-- **Model**: YOLOv8 pretrained on COCO dataset
-- **Capabilities**:
-  - Detection of 80 common classes (cars, trucks, buses, etc.)
-  - High-precision bounding box detection
-  - Real-time processing capabilities
-- **Output Format**:
-  ```json
-  [{"label": "car", "confidence": 0.9, "bbox": [x1, y1, x2, y2]}, ...]
-  ```
-
-#### 2. Object Tracking (DeepSORT/ByteTrack)
-
-- **Purpose**: Track objects across video frames
-- **Features**:
-  - Object ID assignment and maintenance
-  - Motion prediction and tracking
-  - Speed and direction calculation
-- **Output**: Tracked object information with IDs and trajectories
-
-### Detection Pipeline
-
-```
-           Video
-             ↓
-      [1] Frame Extraction
-             ↓
-      [2] YOLOv8 Detection
-             ↓
-   [3] DeepSORT Tracking
-             ↓
-[4] Accident Heuristics
-             ↓
-     🚨 Accident Detection
-```
-
-### Accident Detection Logic
-
-#### Heuristic Rules
-
-1. **Bounding Box Overlap**
-
-   - Sudden and significant overlap between vehicle bounding boxes
-   - Threshold-based collision detection
-
-2. **Speed Analysis**
-
-   - Sudden deceleration detection
-   - Abnormal speed patterns
-   - Impact velocity calculation
-
-3. **Direction Analysis**
-
-   - Opposing direction collision detection
-   - Abnormal trajectory changes
-   - Post-impact movement patterns
-
-4. **Post-Impact Behavior**
-   - Vehicle immobilization detection
-   - Multiple vehicle involvement
-   - Secondary collision detection
-
-### Technical Stack
-
-| Component            | Technology           |
-| -------------------- | -------------------- |
-| Object Detection     | YOLOv8 (ultralytics) |
-| Object Tracking      | DeepSORT/ByteTrack   |
-| Video Processing     | OpenCV               |
-| Programming Language | Python               |
+| Pipeline | Architecture | Framework | Input |
+|----------|-------------|-----------|-------|
+| Image Classification | MobileNetV2 (transfer learning, ImageNet) | TensorFlow / Keras | 224×224 image |
+| Video Classification | R3D-18 (3D ResNet) | PyTorch | 16 frames @ 112×112 |
+| Severity Assessment | YOLOv8 | Ultralytics | 640×640 image |
 
 ## Project Structure
 
 ```
-accident_detection/
-├── src/
-│   ├── detection/
-│   │   ├── __init__.py
-│   │   ├── yolo_detector.py        # YOLOv8 implementation
-│   │   └── object_tracker.py       # DeepSORT implementation
-│   │
-│   ├── processing/
-│   │   ├── __init__.py
-│   │   ├── video_processor.py      # Video frame extraction and processing
-│   │   └── data_processor.py       # Data preprocessing utilities
-│   │
-│   ├── analysis/
-│   │   ├── __init__.py
-│   │   ├── collision_detector.py   # Accident detection logic
-│   │   └── movement_analyzer.py    # Vehicle movement analysis
-│   │
-│   └── utils/
-│       ├── __init__.py
-│       ├── visualization.py        # Visualization utilities
-│       └── metrics.py             # Performance metrics
+ML_project/
+├── app/                           # Streamlit web application
+│   ├── streamlit_app.py           #   Main entry point
+│   ├── components.py              #   Reusable UI components
+│   └── config.py                  #   App settings & label maps
 │
-├── configs/
-│   ├── yolo_config.yaml           # YOLOv8 configuration
-│   ├── tracker_config.yaml        # DeepSORT configuration
-│   └── detection_config.yaml      # Accident detection parameters
+├── src/                           # Core ML library
+│   ├── common/
+│   │   └── config.py              #   Shared config & path utilities
+│   ├── image/
+│   │   ├── model.py               #   MobileNetV2 model builder
+│   │   └── dataset.py             #   TF image dataset loader
+│   ├── video/
+│   │   ├── model.py               #   R3D-18 video classifier
+│   │   └── dataset.py             #   OpenCV video frame sampler
+│   ├── severity/
+│   │   └── infer.py               #   YOLOv8 severity inference
+│   └── services/                  #   High-level prediction APIs
+│       ├── image_service.py
+│       ├── video_service.py
+│       └── severity_service.py
 │
-├── scripts/
-│   ├── train.py                   # Training script
-│   ├── evaluate.py                # Evaluation script
-│   └── inference.py               # Real-time inference script
+├── scripts/                       # CLI: train / evaluate / infer
+│   ├── train_image.py
+│   ├── train_video.py
+│   ├── train_severity.py
+│   ├── eval_image.py
+│   ├── eval_video.py
+│   ├── eval_severity.py
+│   ├── infer_image.py
+│   ├── infer_video.py
+│   └── normalize_dataset.py
 │
-├── notebooks/
-│   ├── data_exploration.ipynb     # Data analysis notebooks
-│   └── model_evaluation.ipynb     # Model performance analysis
+├── preprocessing/                 # One-time data preparation
+│   ├── extract_frames.py          #   Extract frames from videos
+│   ├── split_frames.py            #   Split into train/val/test
+│   ├── merge_datasets.py          #   Merge multiple datasets
+│   └── load_and_visualize.py      #   Dataset statistics & viz
 │
-├── tests/
-│   ├── test_detector.py           # Unit tests for detection
-│   ├── test_tracker.py            # Unit tests for tracking
-│   └── test_analysis.py           # Unit tests for analysis
+├── configs/                       # YAML configurations
+│   ├── yolo_config.yaml
+│   └── detection_config.yaml
 │
-├── data/
-│   ├── raw/                       # Raw video files
-│   ├── processed/                 # Processed frames and annotations
-│   └── results/                   # Detection results and metrics
+├── models/                        # Trained model weights
+│   ├── image_model.h5
+│   ├── video_model.pth
+│   ├── severity_model.pt
+│   ├── yolov8n.pt
+│   └── yolov8x.pt
 │
-├── models/
-│   ├── weights/                   # Pretrained model weights
-│   └── saved_models/             # Saved model checkpoints
+├── data/                          # Sample data
+│   ├── image/
+│   └── videos/
 │
-├── docs/
-│   ├── api/                       # API documentation
-│   ├── guides/                    # User guides
-│   └── examples/                  # Usage examples
+├── tests/                         # Test suite
+│   ├── test_services.py
+│   └── test_severity.py
 │
-├── requirements.txt               # Project dependencies
-├── setup.py                      # Package setup file
-├── README.md                     # Project documentation
-└── .gitignore                    # Git ignore file
+├── requirements.txt
+├── setup.py
+├── .gitignore
+├── MIT License.md
+└── README.md
 ```
 
-### Key Components
-
-1. **Source Code (`src/`)**:
-
-   - `detection/`: YOLOv8 and DeepSORT implementations
-   - `processing/`: Video and data processing utilities
-   - `analysis/`: Accident detection logic
-   - `utils/`: Helper functions and utilities
-
-2. **Configuration (`configs/`)**:
-
-   - Model parameters
-   - Detection thresholds
-   - System settings
-
-3. **Scripts (`scripts/`)**:
-
-   - Training and evaluation scripts
-   - Inference pipeline
-
-4. **Data Management (`data/`)**:
-
-   - Raw video storage
-   - Processed data
-   - Results and metrics
-
-5. **Documentation (`docs/`)**:
-   - API documentation
-   - User guides
-   - Examples
-
-## Installation and Setup
-
-1. Clone the repository:
+## Installation
 
 ```bash
-git clone [repository-url]
-cd [repository-name]
-```
+# Clone the repository
+git clone <repository-url>
+cd ML_project
 
-2. Install dependencies:
+# Create a virtual environment
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # Linux/Mac
 
-```bash
-pip install ultralytics
-pip install opencv-python
-pip install deep_sort_realtime
+# Install dependencies
 pip install -r requirements.txt
+
+# Install the project in editable mode (optional, enables src.* imports everywhere)
+pip install -e .
 ```
 
-3. Prepare your dataset:
+## Dataset Preparation
 
-- Place raw videos in the `datasets/` directory
-- Run preprocessing scripts to extract and prepare frames
-- Ensure proper train/validation split
+The dataset should be organized into `Accident/` and `Non_Accident/` folders under `train/`, `val/`, and `test/` splits:
 
-## Usage
+```
+data/
+├── train/
+│   ├── Accident/
+│   └── Non_Accident/
+├── val/
+│   ├── Accident/
+│   └── Non_Accident/
+└── test/
+    ├── Accident/
+    └── Non_Accident/
+```
 
-### Training
+### Preprocessing scripts
 
 ```bash
-python train.py
+# 1. Extract frames from video datasets
+python preprocessing/extract_frames.py --dataset-2 <path> --dataset-3 <path> --output processed-datasets
+
+# 2. Split extracted frames into train/val/test
+python preprocessing/split_frames.py --source processed-datasets/all_data --target processed-datasets
+
+# 3. Merge additional datasets
+python preprocessing/merge_datasets.py --source <path> --target processed-datasets
+
+# 4. Normalize class folder names (fix "Non Accident" -> "Non_Accident")
+python scripts/normalize_dataset.py --root processed-datasets
+
+# 5. Visualize dataset statistics
+python preprocessing/load_and_visualize.py --dataset-path processed-datasets
 ```
 
-### Evaluation
+## Training
 
 ```bash
-python evaluate.py
+# Train image classifier (MobileNetV2)
+python scripts/train_image.py --data-dir data --epochs 10 --batch-size 32
+
+# Train video classifier (R3D-18)
+python scripts/train_video.py --data-dir data --epochs 10 --batch-size 4
+
+# Train severity model (YOLOv8)
+python scripts/train_severity.py --data configs/severity.yaml --epochs 50
 ```
 
-## Objectives
+## Evaluation
 
-1. Faster and more accurate accident detection.
-2. Automated emergency response to reduce casualties.
-3. Streamlined insurance claim processing through automated reporting.
-4. Scalable AI model for integration with smart traffic systems.
+```bash
+# Evaluate image model
+python scripts/eval_image.py --data-dir data --model models/image_model.h5
 
-## Problem Statement
+# Evaluate video model
+python scripts/eval_video.py --data-dir data --model models/video_model.pth
 
-Road accidents, particularly in the Indian subcontinent, are exacerbated by traffic congestion, poor road conditions, and delays in detection and reporting. Current manual reporting methods are inefficient and inconsistent, leading to slower emergency responses and prolonged insurance claim processes.
+# Evaluate severity model
+python scripts/eval_severity.py --weights models/severity_model.pt --data configs/severity.yaml
+```
 
-### Challenges
+## Inference (CLI)
 
-- Limited availability of high-quality accident datasets specific to the Indian subcontinent.
-- Accurate differentiation between genuine accidents and false alarms.
-- Real-time processing of large-scale image/video data.
-- Seamless integration with emergency response systems.
+```bash
+# Single image
+python scripts/infer_image.py --input path/to/image.jpg
 
-## Proposed Solution
+# Single video
+python scripts/infer_video.py --input path/to/video.mp4 --model models/video_model.pth
+```
 
-The system will utilize YOLOv8 and DeepSORT to detect and track vehicles in real-time, applying heuristic rules to identify potential accidents. The system will be trained on real-world traffic scenarios to ensure high accuracy and relevance.
+## Streamlit App
 
-By incorporating AI into road safety, this project aims to:
+The interactive web application lets you upload images or videos and see predictions in real time.
 
-- Drastically reduce accident response times.
-- Improve efficiency in insurance claim processing.
-- Enhance overall public safety through smarter traffic systems.
+```bash
+streamlit run app/streamlit_app.py
+```
 
-## Scope
+The app provides three modes:
+1. **Image Detection** — Upload an image, get Accident / Non-Accident classification
+2. **Video Detection** — Upload a video, see sampled frames and classification
+3. **Severity Assessment** — Upload an accident image, get severity analysis
 
-This project focuses on image/video-based accident detection using object detection and tracking, and does not include factors like weather or driver behavior analysis.
+## Testing
 
-## Future Improvements
-
-1. Integration with real-time traffic monitoring systems
-2. Enhanced severity assessment using object detection
-3. Multi-camera fusion for better coverage
-4. Mobile application for real-time alerts
-5. Integration with emergency response systems
+```bash
+pytest tests/ -v
+```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
-
-## Acknowledgments
-
-- YOLOv8 for object detection
-- DeepSORT/ByteTrack for object tracking
-- OpenCV for video processing
-- Various open-source datasets for training and validation
+This project is licensed under the MIT License — see [MIT License.md](MIT%20License.md) for details.
