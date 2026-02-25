@@ -15,11 +15,11 @@ This is a **supervised machine-learning** project: models learn from labelled da
 
 ## Models
 
-| Pipeline | Architecture | Framework | Input |
-|----------|-------------|-----------|-------|
-| Image Classification | MobileNetV2 (transfer learning, ImageNet) | TensorFlow / Keras | 224×224 image |
-| Video Classification | R3D-18 (3D ResNet) | PyTorch | 16 frames @ 112×112 |
-| Severity Assessment | YOLOv8 | Ultralytics | 640×640 image |
+| Pipeline             | Architecture                              | Framework          | Input               |
+| -------------------- | ----------------------------------------- | ------------------ | ------------------- |
+| Image Classification | MobileNetV2 (transfer learning, ImageNet) | TensorFlow / Keras | 224×224 image       |
+| Video Classification | R3D-18 (3D ResNet)                        | PyTorch            | 16 frames @ 112×112 |
+| Severity Assessment  | YOLOv8                                    | Ultralytics        | 640×640 image       |
 
 ## Project Structure
 
@@ -189,6 +189,7 @@ streamlit run app/streamlit_app.py
 ```
 
 The app provides three modes:
+
 1. **Image Detection** — Upload an image, get Accident / Non-Accident classification
 2. **Video Detection** — Upload a video, see sampled frames and classification
 3. **Severity Assessment** — Upload an accident image, get severity analysis
