@@ -1,8 +1,6 @@
 """Reusable Streamlit UI components for displaying predictions."""
 
 import os
-import cv2
-import numpy as np
 import streamlit as st
 from PIL import Image
 
@@ -67,6 +65,12 @@ def render_image_result(image_path: str, prediction: dict):
 
 def _sample_video_frames(video_path: str, n: int = 6) -> list:
     """Return up to *n* evenly-spaced frames as PIL images."""
+    try:
+        import cv2
+        import numpy as np
+    except Exception:
+        return []
+
     cap = cv2.VideoCapture(video_path)
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total <= 0:

@@ -14,6 +14,7 @@ Features:
 import sys
 import os
 import tempfile
+import random
 
 import streamlit as st
 
@@ -37,8 +38,21 @@ from app.components import (
     render_severity_result,
 )
 
+
+DEMO_MODE = os.getenv("DEMO_MODE", "1").strip().lower() in {"1", "true", "yes"}
+
+
+def _fake_prediction(num_classes: int) -> dict:
+    rng = random.Random()
+    cls_idx = rng.randrange(0, num_classes)
+    score = rng.uniform(0.6, 0.98)
+    return {"class_index": cls_idx, "score": score}
+
 # ── Page configuration ────────────────────────────────────────────────────
 st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout="wide")
+
+if DEMO_MODE:
+    st.info("Demo mode is on. Predictions are simulated and ML models are not loaded.")
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────
@@ -76,9 +90,12 @@ if mode == "Image Detection":
         tmp_path = _save_upload(uploaded, f".{uploaded.name.split('.')[-1]}")
         with st.spinner("Analysing image..."):
             try:
-                from src.services.image_service import predict_image
+                if DEMO_MODE:
+                    result = _fake_prediction(num_classes=2)
+                else:
+                    from src.services.image_service import predict_image
 
-                result = predict_image(tmp_path)
+                    result = predict_image(tmp_path)
                 render_image_result(tmp_path, result)
             except FileNotFoundError:
                 st.error(
@@ -105,9 +122,12 @@ elif mode == "Video Detection":
         tmp_path = _save_upload(uploaded, f".{uploaded.name.split('.')[-1]}")
         with st.spinner("Analysing video (sampling frames)..."):
             try:
-                from src.services.video_service import predict_video
+                if DEMO_MODE:
+                    result = _fake_prediction(num_classes=2)
+                else:
+                    from src.services.video_service import predict_video
 
-                result = predict_video(tmp_path)
+                    result = predict_video(tmp_path)
                 render_video_result(tmp_path, result)
             except FileNotFoundError:
                 st.error(
@@ -137,9 +157,12 @@ elif mode == "Severity Assessment":
         tmp_path = _save_upload(uploaded, f".{uploaded.name.split('.')[-1]}")
         with st.spinner("Running severity analysis..."):
             try:
-                from src.services.severity_service import predict_severity
+                if DEMO_MODE:
+                    result = _fake_prediction(num_classes=3)
+                else:
+                    from src.services.severity_service import predict_severity
 
-                result = predict_severity(tmp_path)
+                    result = predict_severity(tmp_path)
                 render_severity_result(tmp_path, result)
             except FileNotFoundError:
                 st.error(
